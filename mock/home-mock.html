@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>browser-relay — mockup Beranda</title>
+<style>
+  :root {
+    --bg: #161616; --panel: #1e1e1e; --raised: #262626; --active: #2f2f2f;
+    --border: #303030; --text: #dadada; --muted: #9a9a9a; --faint: #6b6b6b;
+    --accent: #8b72f0; --green: #3fb950; --red: #f85149;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom));
+  }
+
+  /* ===== header ===== */
+  header {
+    position: sticky; top: 0; z-index: 5;
+    background: rgba(22,22,22,.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px 12px; display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { margin: 0; font-size: 20px; font-weight: 700; }
+  header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  #editBtn {
+    border: 1px solid var(--border); background: var(--raised); color: var(--text);
+    border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+  }
+  #editBtn.on { background: rgba(139,114,240,.18); border-color: var(--accent); color: var(--accent); }
+
+  /* ===== search / address ===== */
+  .searchbar { padding: 14px 16px 4px; }
+  .searchbar .box {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+    padding: 12px 16px; color: var(--faint); font-size: 14px; cursor: pointer;
+  }
+  .searchbar .box:hover { border-color: #454545; }
+  .searchbar svg { width: 17px; height: 17px; stroke: var(--faint); flex: 0 0 auto; }
+
+  /* ===== shortcut grid ===== */
+  .grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 18px 8px; padding: 18px 16px 8px;
+  }
+  .tile {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    cursor: pointer; background: none; border: none; font-family: inherit; padding: 0;
+    position: relative;
+  }
+  .tile .icon {
+    width: 60px; height: 60px; border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35);
+    transition: transform .12s;
+  }
+  .tile:active .icon { transform: scale(.93); }
+  .tile .icon svg { width: 30px; height: 30px; }
+  .tile .label {
+    font-size: 11.5px; color: var(--text); text-align: center;
+    max-width: 76px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile .del {
+    display: none; position: absolute; top: -7px; right: 2px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--red); color: #fff; font-size: 15px; line-height: 1;
+    align-items: center; justify-content: center; border: 2px solid var(--bg);
+  }
+  body.editing .tile .del { display: flex; }
+  body.editing .tile .icon { animation: jiggle .3s infinite; }
+  @keyframes jiggle { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+  .tile.add .icon {
+    background: transparent; border: 1.5px dashed #454545; box-shadow: none;
+    color: var(--muted); font-size: 28px; font-weight: 300;
+  }
+  body.editing .tile.add { display: none; }
+
+  /* ===== section ===== */
+  .section { padding: 10px 16px 0; }
+  .section h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; text-transform: uppercase; letter-spacing: .6px; }
+
+  /* ===== add dialog ===== */
+  #dlg {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    background: rgba(0,0,0,.6); align-items: center; justify-content: center; padding: 24px;
+  }
+  #dlg.open { display: flex; }
+  .dlg-body {
+    width: 100%; max-width: 360px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 18px; padding: 22px 20px;
+  }
+  .dlg-body h3 { margin: 0 0 4px; font-size: 16px; }
+  .dlg-body p { margin: 0 0 16px; font-size: 12.5px; color: var(--muted); }
+  .dlg-body label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
+  .dlg-body input {
+    width: 100%; padding: 11px 13px; font-size: 14px; color: var(--text);
+    background: #141414; border: 1px solid var(--border); border-radius: 10px; outline: none;
+    font-family: inherit;
+  }
+  .dlg-body input:focus { border-color: var(--accent); }
+  .dlg-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .dlg-actions button {
+    flex: 1; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer; font-family: inherit;
+  }
+  #dlgCancel { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+  #dlgOk { background: var(--accent); color: #fff; border: none; }
+
+  /* ===== toast ===== */
+  #toast {
+    position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%) translateY(8px); z-index: 40;
+    background: rgba(28,28,28,.94); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 15px; border-radius: 999px; font-size: 12.5px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ===== demo switcher (mockup only) ===== */
+  #demo {
+    position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: 12px; right: 12px; z-index: 20;
+    background: rgba(30,30,30,.95); border: 1px solid var(--border); border-radius: 14px;
+    padding: 10px 14px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted);
+  }
+  #demo b { color: var(--text); }
+  #demo button {
+    margin-left: auto; border: 1px solid var(--accent); background: rgba(139,114,240,.15);
+    color: var(--accent); border-radius: 999px; padding: 7px 14px; font-size: 12px; font-weight: 600;
+    cursor: pointer; font-family: inherit; white-space: nowrap;
+  }
+  #viewportMock {
+    position: fixed; inset: 0; z-index: 50; background: #fff; color: #202122;
+    display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    padding: 24px; text-align: center;
+  }
+  #viewportMock.show { display: flex; }
+  #viewportMock .url { font-size: 13px; color: #72777d; background: #f0f0f0; padding: 8px 18px; border-radius: 999px; }
+  #viewportMock h2 { font-weight: 400; margin: 0; }
+  #viewportMock button {
+    border: none; background: var(--accent); color: #fff; border-radius: 999px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Beranda</h1>
+    <p>Shortcut ke situs favoritmu</p>
+  </div>
+  <button id="editBtn">Edit</button>
+</header>
+
+<div class="searchbar">
+  <div class="box" id="searchBox">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <span>Cari atau ketik URL…</span>
+  </div>
+</div>
+
+<div class="section"><h2>Aplikasi</h2></div>
+<div class="grid" id="grid"></div>
+
+<div id="dlg">
+  <div class="dlg-body">
+    <h3>Tambah shortcut</h3>
+    <p>Tersimpan di HP ini. Ketuk untuk membuka situsnya.</p>
+    <label>Nama</label>
+    <input id="dlgName" placeholder="cth: Facebook" maxlength="24">
+    <label>URL</label>
+    <input id="dlgUrl" placeholder="cth: facebook.com" inputmode="url">
+    <div class="dlg-actions">
+      <button id="dlgCancel">Batal</button>
+      <button id="dlgOk">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="demo">
+  <span><b>Mockup:</b> ini tampilan Beranda. Nanti dibuka lewat tombol Home di tools sheet.</span>
+  <button id="demoViewport">Simulasi buka situs →</button>
+</div>
+
+<div id="viewportMock">
+  <div class="url" id="vmUrl">facebook.com</div>
+  <h2>Halaman situs (mock)</h2>
+  <p style="color:#72777d;font-size:13px">Di app beneran, ini viewport Chrome-nya.<br>Tombol Home di tools sheet balik ke Beranda.</p>
+  <button id="vmHome">← Kembali ke Beranda</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var grid = document.getElementById("grid");
+  var toastEl = document.getElementById("toast"), tT = null;
+  function toast(m) {
+    toastEl.textContent = m; toastEl.classList.add("show");
+    clearTimeout(tT); tT = setTimeout(function () { toastEl.classList.remove("show"); }, 1700);
+  }
+
+  var ICONS = {
+    facebook: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M13.5 21v-7h2.4l.4-3h-2.8V9.1c0-.9.3-1.5 1.6-1.5h1.3V4.9c-.3 0-1.2-.1-2.2-.1-2.2 0-3.7 1.3-3.7 3.8V11H8v3h2.5v7h3z"/></svg>',
+    youtube: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.9C18.2 5 12 5 12 5s-6.2 0-7.8.3A2.6 2.6 0 0 0 2.4 7.2 27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.9c1.6.3 7.8.3 7.8.3s6.2 0 7.8-.3a2.6 2.6 0 0 0 1.8-1.9A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8zM10 15V9l5.2 3L10 15z"/></svg>',
+    google: '<svg viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1H12v2.9h5.35c-.5 2.4-2.7 3.6-5.35 3.6a5.9 5.9 0 1 1 0-11.8c1.5 0 2.9.6 3.9 1.5l2.1-2.1A8.9 8.9 0 1 0 12 20.9c4.4 0 8.1-3.1 8.1-8.9 0-.3 0-.6-.1-.9z"/></svg>',
+    x: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M17.7 3H21l-7.3 8.3L22.2 21h-6.7l-5.2-6.2L4.3 21H1l7.8-8.9L1.8 3h6.9l4.7 5.7L17.7 3zm-1.2 16h1.9L7.1 4.9H5L16.5 19z"/></svg>',
+    instagram: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2" fill="#fff" stroke="none"/></svg>',
+    tiktok: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M16.6 3c.4 2.3 1.9 3.7 4.4 3.9v3c-1.7 0-3.2-.5-4.4-1.4v6.6a6.1 6.1 0 1 1-6.1-6.1c.3 0 .7 0 1 .1v3.1a3 3 0 1 0 2 2.9V3h3.1z"/></svg>',
+    github: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.2-.4-1.3.1-2.6 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.3.2 2.4.1 2.6.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg>',
+    wikipedia: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/></svg>'
+  };
+  var COLORS = {
+    facebook: "#1877f2", youtube: "#ff0000", google: "#1a73e8", x: "#000000",
+    instagram: "linear-gradient(135deg,#f9ce34,#ee2a7b,#6228d7)", tiktok: "#111111",
+    github: "#24292f", wikipedia: "#636363"
+  };
+  var DEFAULTS = [
+    { name: "Facebook", url: "facebook.com", icon: "facebook" },
+    { name: "YouTube", url: "youtube.com", icon: "youtube" },
+    { name: "Google", url: "google.com", icon: "google" },
+    { name: "X", url: "x.com", icon: "x" },
+    { name: "Instagram", url: "instagram.com", icon: "instagram" },
+    { name: "TikTok", url: "tiktok.com", icon: "tiktok" },
+    { name: "GitHub", url: "github.com", icon: "github" },
+    { name: "Wikipedia", url: "wikipedia.org", icon: "wikipedia" }
+  ];
+
+  var shortcuts;
+  try {
+    shortcuts = JSON.parse(localStorage.getItem("br_home") || "null") || DEFAULTS.slice();
+  } catch (e) { shortcuts = DEFAULTS.slice(); }
+  function save() { try { localStorage.setItem("br_home", JSON.stringify(shortcuts)); } catch (e) {} }
+
+  function iconFor(s) {
+    var key = s.icon && ICONS[s.icon] ? s.icon : null;
+    var glyph = key ? ICONS[key] : '<span style="color:#fff;font-weight:700;font-size:24px">' +
+      (s.name || "?").charAt(0).toUpperCase() + "</span>";
+    var bg = key ? COLORS[key] : "#8b72f0";
+    return '<div class="icon" style="background:' + bg + '">' + glyph + "</div>";
+  }
+
+  function render() {
+    grid.innerHTML = "";
+    shortcuts.forEach(function (s, i) {
+      var b = document.createElement("button");
+      b.className = "tile";
+      b.innerHTML = iconFor(s) + '<span class="label"></span><span class="del">×</span>';
+      b.querySelector(".label").textContent = s.name;
+      b.title = s.url;
+      b.querySelector(".del").onclick = function (e) {
+        e.stopPropagation();
+        shortcuts.splice(i, 1); save(); render();
+        toast("Shortcut dihapus");
+      };
+      b.onclick = function () {
+        if (document.body.classList.contains("editing")) return;
+        openSite(s);
+      };
+      grid.appendChild(b);
+    });
+    var add = document.createElement("button");
+    add.className = "tile add";
+    add.innerHTML = '<div class="icon">+</div><span class="label">Tambah</span>';
+    add.onclick = openDlg;
+    grid.appendChild(add);
+  }
+
+  // ---- add dialog ----
+  var dlg = document.getElementById("dlg");
+  function openDlg() {
+    document.getElementById("dlgName").value = "";
+    document.getElementById("dlgUrl").value = "";
+    dlg.classList.add("open");
+    setTimeout(function () { document.getElementById("dlgName").focus(); }, 60);
+  }
+  function closeDlg() { dlg.classList.remove("open"); }
+  document.getElementById("dlgCancel").onclick = closeDlg;
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) closeDlg(); });
+  document.getElementById("dlgOk").onclick = function () {
+    var name = document.getElementById("dlgName").value.trim();
+    var url = document.getElementById("dlgUrl").value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+    if (!name) { toast("Isi namanya dulu"); return; }
+    if (!url || url.indexOf(".") < 0) { toast("URL-nya belum valid"); return; }
+    shortcuts.push({ name: name, url: url });
+    save(); render(); closeDlg();
+    toast("Shortcut tersimpan");
+  };
+
+  // ---- edit mode ----
+  var editBtn = document.getElementById("editBtn");
+  editBtn.onclick = function () {
+    var on = document.body.classList.toggle("editing");
+    editBtn.classList.toggle("on", on);
+    editBtn.textContent = on ? "Selesai" : "Edit";
+  };
+
+  // ---- search box ----
+  document.getElementById("searchBox").onclick = function () {
+    var u = prompt("Buka URL:", "https://");
+    if (u && u.trim()) openSite({ name: u.trim(), url: u.trim() });
+  };
+
+  // ---- demo: open site / back home ----
+  var vm = document.getElementById("viewportMock");
+  function openSite(s) {
+    document.getElementById("vmUrl").textContent = s.url;
+    vm.classList.add("show");
+  }
+  document.getElementById("vmHome").onclick = function () { vm.classList.remove("show"); };
+  document.getElementById("demoViewport").onclick = function () {
+    openSite({ name: "Demo", url: "contoh.web" });
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>

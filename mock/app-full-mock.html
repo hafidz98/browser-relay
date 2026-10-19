@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mock Full: Browser Relay Android</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0e0e0e; color: #dadada; font-family: system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; padding: 18px 12px 40px; }
+  h1.top { font-size: 15px; color: #8b72f0; margin-bottom: 14px; font-weight: 600; }
+  .stages { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; justify-content: center; }
+  .stages button { background: #1e1e1e; color: #dadada; border: 1px solid #333;
+                   border-radius: 20px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+  .stages button.active { background: #8b72f0; border-color: #8b72f0; color: #fff; }
+  .phone { width: 360px; height: 720px; background: #161616; border: 1px solid #333;
+           border-radius: 28px; overflow: hidden; position: relative; display: flex;
+           flex-direction: column; }
+  .screen { display: none; flex-direction: column; height: 100%; }
+  .screen.active { display: flex; }
+  .note { max-width: 360px; font-size: 12px; color: #8b72f0; margin-top: 12px; line-height: 1.5; }
+  .note b { color: #dadada; }
+
+  /* ---- shared ---- */
+  .hdr { display: flex; align-items: center; padding: 14px 16px 12px; gap: 8px; }
+  .hdr .titles { flex: 1; }
+  .hdr h1 { font-size: 20px; font-weight: 700; }
+  .rbtn { width: 38px; height: 38px; border-radius: 50%; background: #2a2a2a; border: none;
+          display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .rbtn svg { width: 20px; height: 20px; stroke: #dadada; }
+  .btn { display: block; width: 100%; padding: 13px; border-radius: 10px; border: none;
+         font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+         display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .btn svg { width: 18px; height: 18px; }
+  .btn.primary { background: #8b72f0; color: #fff; }
+  .btn.primary svg { stroke: #fff; }
+  .btn.ghost { background: #262626; color: #dadada; border: 1px solid #333; font-weight: 500; }
+  .btn.ghost svg { stroke: #dadada; }
+  .btn.danger-ghost { background: #262626; color: #ff8a8a; border: 1px solid #4a2a2a; font-weight: 500; }
+  .btn.danger-ghost svg { stroke: #ff8a8a; }
+  .fld-label { font-size: 12px; color: #9a9a9a; margin-bottom: 4px; }
+  .fld { background: #141414; border: 1px solid #333; border-radius: 8px; width: 100%;
+         padding: 11px 12px; font-size: 14px; color: #dadada; margin-bottom: 12px; }
+
+  /* ---- screen 1: pairing ---- */
+  .pair-wrap { padding: 24px 20px; display: flex; flex-direction: column; height: 100%; }
+  .pair-logo { width: 64px; height: 64px; border-radius: 18px; background: #8b72f0;
+               margin: 30px auto 16px; display: flex; align-items: center; justify-content: center; }
+  .pair-logo svg { width: 34px; height: 34px; stroke: #fff; }
+  .pair-wrap h2 { text-align: center; font-size: 18px; margin-bottom: 6px; }
+  .pair-wrap .sub { text-align: center; font-size: 13px; color: #9a9a9a; margin-bottom: 24px; }
+  .pair-note { font-size: 11px; color: #6b6b6b; text-align: center; margin-top: auto; padding-bottom: 10px; }
+
+  /* ---- screen 2: viewport ---- */
+  .viewport { flex: 1; background: #fff; margin: 0 8px; border-radius: 8px; position: relative;
+              display: flex; align-items: center; justify-content: center; color: #999; font-size: 13px; }
+  .latency { position: absolute; top: 14px; right: 14px; background: rgba(20,20,20,.85);
+             border-radius: 20px; padding: 5px 11px; font-size: 11px; color: #e8e8e8;
+             display: flex; align-items: center; gap: 5px; }
+  .latency .dot { width: 6px; height: 6px; border-radius: 50%; background: #4caf50; }
+  .urlbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .urlbar .url { flex: 1; background: #1e1e1e; border-radius: 8px; padding: 9px 12px;
+                 font-size: 12px; color: #9a9a9a; white-space: nowrap; overflow: hidden; }
+  .fab { position: absolute; bottom: 96px; right: 18px; width: 54px; height: 54px;
+         border-radius: 50%; background: #8b72f0; border: none; cursor: pointer;
+         display: flex; align-items: center; justify-content: center;
+         box-shadow: 0 4px 14px rgba(139,114,240,.4); }
+  .fab svg { width: 24px; height: 24px; stroke: #fff; }
+  .tabrow { display: flex; gap: 6px; padding: 8px 12px 0; overflow: hidden; }
+  .tab { background: #1e1e1e; border-radius: 8px 8px 0 0; padding: 8px 12px; font-size: 12px;
+         color: #9a9a9a; white-space: nowrap; }
+  .tab.on { background: #262626; color: #dadada; }
+
+  /* ---- screen 3: beranda ---- */
+  .search { margin: 0 16px 12px; background: #1e1e1e; border: 1px solid #333;
+            border-radius: 10px; padding: 12px; color: #6b6b6b; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 0 16px; }
+  .app { text-align: center; }
+  .app .ic { width: 52px; height: 52px; border-radius: 14px; background: #2a2a2a;
+             margin: 0 auto 6px; display: flex; align-items: center; justify-content: center;
+             font-size: 24px; }
+  .app .nm { font-size: 11px; }
+  .status-row { margin: 4px 16px 12px; background: #1e1e1e; border: 1px solid #333;
+                border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .status-row .dot { width: 10px; height: 10px; border-radius: 50%; background: #4caf50; flex-shrink: 0; }
+  .status-row .t { flex: 1; font-size: 13px; }
+  .status-row .t small { display: block; color: #9a9a9a; font-size: 11px; }
+  .mini-btn { background: #262626; border: 1px solid #333; color: #dadada; border-radius: 8px;
+              padding: 8px 10px; font-size: 12px; cursor: pointer; display: flex;
+              align-items: center; gap: 6px; }
+  .mini-btn svg { width: 15px; height: 15px; stroke: #ff8a8a; }
+</style>
+</head>
+<body>
+<h1 class="top">Mock Full — Browser Relay Android (dari awal)</h1>
+<div class="stages">
+  <button class="active" onclick="go(1,this)">1. Beranda + Pairing</button>
+  <button onclick="go(2,this)">2. Viewport</button>
+</div>
+
+<div class="phone">
+  <!-- ============ SCREEN 1: PAIRING ============ -->
+  <div class="screen active" id="s1">
+    <div class="pair-wrap">
+      <div class="pair-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      </div>
+      <h2>Hubungkan ke PC</h2>
+      <div class="sub">Kendalikan Chrome di laptop dari HP ini</div>
+      <div class="fld-label">Server (host:port)</div>
+      <input class="fld" value="192.168.1.10:8765" readonly>
+      <button class="btn primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Minta Kode Pairing
+      </button>
+      <div class="fld-label">Kode dari panel PC (6 digit)</div>
+      <input class="fld" placeholder="••••••" style="letter-spacing:10px;text-align:center;font-size:20px" readonly>
+      <button class="btn ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Hubungkan
+      </button>
+      <div class="pair-note">atau scan QR dari panel PC — otomatis kebuka di app ini</div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 2: VIEWPORT ============ -->
+  <div class="screen" id="s2">
+    <div class="tabrow">
+      <div class="tab on">google.com</div>
+      <div class="tab">github.com</div>
+    </div>
+    <div class="urlbar">
+      <div class="url">🔒 google.com</div>
+    </div>
+    <div class="viewport">
+      <span>Chrome viewport (mirror)</span>
+      <div class="latency"><span class="dot"></span>12 ms</div>
+    </div>
+    <button class="fab" title="Tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    </button>
+    <div style="padding:10px 16px 18px;display:flex;gap:10px">
+      <button class="btn ghost" style="margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+        Beranda
+      </button>
+      <button class="btn danger-ghost" style="margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7"/><path d="M15 7h2a5 5 0 0 1 4 8"/><line x1="8" x2="12" y1="12" y2="12"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+        Putus
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 3: BERANDA ============ -->
+  <div class="screen" id="s3">
+    <div class="hdr">
+      <div class="titles"><h1>Beranda</h1></div>
+      <button class="rbtn" title="Kembali ke pairing">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+      </button>
+      <button class="rbtn" title="Edit">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+      </button>
+    </div>
+    <div class="status-row">
+      <div class="dot"></div>
+      <div class="t">Terhubung ke PC<small>192.168.1.10:8765</small></div>
+      <button class="mini-btn" title="Putus">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7"/><path d="M15 7h2a5 5 0 0 1 4 8"/><line x1="8" x2="12" y1="12" y2="12"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+        Putus
+      </button>
+    </div>
+    <div class="search">🔍 Cari atau ketik URL…</div>
+    <div class="grid" id="g3"></div>
+  </div>
+</div>
+
+<div class="note" id="note1">
+  <b>1. Pairing (halaman awal):</b> user isi server → "Minta Kode Pairing" (kode muncul di panel PC) → ketik 6 digit → "Hubungkan" pakai ikon <b>chain</b> (Lucide <i>link</i>).
+</div>
+<div class="note" id="note2" style="display:none">
+  <b>2. Viewport:</b> mirror Chrome, FAB tools, latency pill (ketuk = reconnect). Tombol "Putus" pakai ikon <b>chain putus</b> (Lucide <i>link-2-off</i>).
+</div>
+<div class="note" id="noteX" style="display:none">
+  <b>3. Beranda:</b> subtitle dihapus, tombol back (<b>arrow-left</b>) &amp; edit (<b>pencil</b>) pakai Lucide — SVG asli, center sempurna. Status row + tombol Putus (chain putus).
+</div>
+
+<script>
+  var apps = [["🌐","Google"],["▶️","YouTube"],["🐙","GitHub"],["📰","Kompas"],["💬","WA Web"],["🎵","Spotify"],["📧","Gmail"],["⚙️","Setting"]];
+  var g = document.getElementById("g3");
+  apps.forEach(function(a){
+    var d = document.createElement("div");
+    d.className = "app";
+    d.innerHTML = '<div class="ic">'+a[0]+'</div><div class="nm">'+a[1]+'</div>';
+    g.appendChild(d);
+  });
+  function go(n, btn) {
+    [1,2,3].forEach(function(i){
+      document.getElementById("s"+i).classList.toggle("active", i===n);
+      document.getElementById("note"+i).style.display = i===n ? "block" : "none";
+    });
+    document.querySelectorAll(".stages button").forEach(function(b){ b.classList.remove("active"); });
+    btn.classList.add("active");
+  }
+</script>
+</body>
+</html>
