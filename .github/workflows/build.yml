@@ -2,20 +2,68 @@ name: Build
 
 on:
   push:
+    branches:
+      - core
     tags:
       - "v*"
       - "android-v*"
+  pull_request:
+    branches:
+      - core
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Fast feedback on every push/PR: check + clippy + unit tests.
+  # --no-default-features drops the eframe GUI binary (Linux runners
+  # have no X11 link libs); relay-nogui + the relay modules still
+  # compile and test there.
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell
+
+      - name: Check
+        run: cargo check --no-default-features
+        working-directory: shell
+
+      - name: Clippy
+        run: cargo clippy --no-default-features
+        working-directory: shell
+
+      - name: Unit tests
+        run: cargo test --no-default-features
+        working-directory: shell
+
   windows-exe:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Tag push builds the release binary; manual dispatch builds it
+    # from any branch so the pipeline can be tested without a tag.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell
 
       - name: Build release
         run: cargo build --release
@@ -32,6 +80,13 @@ jobs:
         with:
           name: relay-windows
           path: relay-*.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: relay-*.exe
+          generate_release_notes: true
 
   android-apk:
     if: startsWith(github.ref, 'refs/tags/android-v')
