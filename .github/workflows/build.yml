@@ -1,0 +1,64 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "android-v*"
+  workflow_dispatch:
+
+jobs:
+  windows-exe:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+        working-directory: shell
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path shell/Cargo.toml -Pattern '^version = "([^"]+)"').Matches.Groups[1].Value
+          Copy-Item "shell/target/release/browser-relay-shell.exe" "relay-$version.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-windows
+          path: relay-*.exe
+
+  android-apk:
+    if: startsWith(github.ref, 'refs/tags/android-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install platform + build-tools
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build APK
+        run: |
+          export ANDROID_HOME=$ANDROID_SDK_ROOT
+          bash android/build.sh 24 2.4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: browserrelay-apk
+          path: android/browserrelay-*.apk

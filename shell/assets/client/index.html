@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>browser-relay</title>
+<style>
+  :root {
+    --panel: #1e1e1e; --raised: #262626; --active: #2f2f2f; --border: #303030;
+    --text: #dadada; --muted: #9a9a9a; --faint: #6b6b6b;
+    --accent: #8b72f0; --green: #3fb950; --yellow: #d29922; --red: #f85149;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #000; color: var(--text); font-size: 14px;
+  }
+
+  /* ===== fullscreen viewport (the remote Chrome page) ===== */
+  #screen {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: contain; display: block; background: #000;
+    user-select: none; -webkit-user-select: none; cursor: default;
+    touch-action: none; -webkit-touch-callout: none;
+  }
+
+  /* ===== latency + status pills ===== */
+  #latency {
+    position: absolute; top: 10px; right: 10px; z-index: 5;
+    background: rgba(20,20,20,.72); color: #e8e8e8;
+    font-size: 11px; padding: 4px 9px; border-radius: 999px;
+    display: flex; gap: 5px; align-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  #latency i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: block; }
+  #latency.warn i { background: var(--yellow); }
+  #latency.bad i { background: var(--red); }
+  #status {
+    position: absolute; top: 10px; right: 86px; z-index: 5;
+    background: rgba(20,20,20,.72); color: var(--muted);
+    font-size: 11px; padding: 4px 9px; border-radius: 999px;
+  }
+
+  /* ===== "browser not started" overlay ===== */
+  #browserDown {
+    position: absolute; inset: 0; z-index: 8; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    pointer-events: none; text-align: center;
+  }
+  #browserDown .bd-card {
+    background: rgba(30,30,30,.94); border: 1px solid var(--border);
+    border-radius: 18px; padding: 22px 24px; max-width: 340px;
+    box-shadow: 0 16px 44px rgba(0,0,0,.5);
+  }
+  #browserDown .bd-title { font-size: 15.5px; font-weight: 600; margin-bottom: 6px; }
+  #browserDown .bd-sub { color: var(--muted); font-size: 13px; line-height: 1.55; }
+  #browserDown .bd-launch {
+    margin-top: 16px; padding: 12px 20px; border: none; border-radius: 12px;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
+    cursor: pointer; pointer-events: auto; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  #browserDown .bd-launch:hover { filter: brightness(1.08); }
+  #browserDown .bd-launch:disabled { opacity: .5; cursor: default; }
+  #browserDown .bd-launch svg { width: 16px; height: 16px; fill: currentColor; }
+
+  /* ===== edge handle: docked pill, click 1 pops a round button,
+         click 2 opens the tools sheet; drag moves it ===== */
+  #fab {
+    position: absolute; right: 0; top: 60%; z-index: 20;
+    width: 20px; height: 56px; border-radius: 11px 0 0 11px;
+    border: 1px solid rgba(255,255,255,.10); border-right: none;
+    background: rgba(24,24,24,.55);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,.30);
+    transition: opacity .35s, width .18s, height .18s, border-radius .18s, background .18s, left .18s, right .18s, top .18s;
+    user-select: none; -webkit-user-select: none;
+  }
+  #fab svg { stroke: var(--accent); }
+  #fab .ico-grip { width: 13px; height: 13px; }
+  #fab .ico-grid { display: none; width: 21px; height: 21px; }
+  #fab .ico-close { display: none; width: 21px; height: 21px; }
+  #fab.side-left { border-radius: 0 11px 11px 0; border: 1px solid rgba(255,255,255,.10); border-left: none; }
+  #fab.side-left .ico-grip { transform: scaleX(-1); }
+  #fab.idle { opacity: .38; }
+  #fab.round {
+    width: 50px; height: 50px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(24,24,24,.92); opacity: 1;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  #fab.round .ico-grip { display: none; }
+  #fab.round .ico-grid { display: block; }
+  #fab.dragging { opacity: 1; transition: none; background: rgba(24,24,24,.85); }
+  #fab.open {
+    width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(139,114,240,.92); opacity: 1;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  #fab.open .ico-grip { display: none; }
+  #fab.open .ico-grid { display: none; }
+  #fab.open .ico-close { display: block; stroke: #fff; }
+
+  #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .22s; }
+  body.sheet-open #backdrop { opacity: 1; pointer-events: auto; }
+
+  /* ===== tools sheet ===== */
+  #toolsheet {
+    position: absolute; left: 50%; right: auto; bottom: 0; z-index: 15;
+    width: min(100%, 620px); transform: translateX(-50%) translateY(calc(100% + 10px));
+    background: var(--panel); border: 1px solid var(--border); border-bottom: none;
+    border-radius: 18px 18px 0 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    transition: transform .26s cubic-bezier(.32,.72,.35,1);
+    box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
+  }
+  body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
+  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d; margin: 2px auto 12px; }
+
+  .addr { display: flex; gap: 8px; align-items: center; }
+  .addr .url {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+    background: #141414; border: 1px solid var(--border); border-radius: 999px;
+    padding: 9px 13px; font-size: 13px; color: var(--text); cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .addr .url:hover { border-color: #454545; }
+  .addr .url svg { width: 13px; height: 13px; stroke: var(--green); flex: 0 0 auto; }
+  .iconbtn {
+    width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--raised); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .iconbtn svg { width: 17px; height: 17px; stroke: var(--text); }
+  .iconbtn:hover { background: var(--active); }
+
+  .tabs { display: flex; gap: 7px; margin: 12px 0 4px; overflow-x: auto; scrollbar-width: none; align-items: center; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto; max-width: 148px; display: flex; align-items: center; gap: 7px;
+    background: var(--raised); border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 11px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tab.on { background: rgba(139,114,240,.16); border-color: rgba(139,114,240,.55); color: var(--text); }
+  .tab .fav { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .tab span:not(.fav):not(.x) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab .x { flex: 0 0 auto; opacity: .6; font-size: 14px; line-height: 1; margin-left: 1px; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
+  .tab .x:hover { background: rgba(255,255,255,.12); opacity: 1; }
+  #newtab { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 1px dashed #454545;
+    background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
+  #newtab:hover { border-color: var(--accent); color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 11px 2px 9px;
+    border-radius: 12px; cursor: pointer; color: var(--text); font-size: 11px; border: none; background: transparent; font-family: inherit; }
+  .tool:hover { background: var(--raised); }
+  .tool.dim { color: var(--faint); }
+  .tool.on { color: var(--accent); }
+  .tool svg { width: 21px; height: 21px; stroke: currentColor; }
+
+  /* ===== auth ===== */
+  #auth {
+    position: fixed; inset: 0; z-index: 40; display: flex;
+    align-items: center; justify-content: center; padding: 24px;
+    background: #161616;
+  }
+  #auth .card {
+    width: 100%; max-width: 340px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px;
+    text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.55);
+  }
+  #auth .dot { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); margin: 0 auto 16px; }
+  #auth h1 { margin: 0 0 6px; font-size: 19px; }
+  #auth p { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  #token {
+    width: 100%; padding: 14px; font-size: 30px; text-align: center;
+    letter-spacing: 10px; text-indent: 10px; font-weight: 700;
+    color: var(--text); background: #141414;
+    border: 1px solid var(--border); border-radius: 12px; outline: none;
+    font-variant-numeric: tabular-nums;
+  }
+  #token:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139,114,240,.25); }
+  .primary {
+    width: 100%; margin-top: 16px; padding: 14px; border: none; border-radius: 12px;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .primary:hover { filter: brightness(1.08); }
+  #authErr { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--red); }
+
+  /* ===== text prompt modal ===== */
+  #prompt {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    background: rgba(0,0,0,.55); align-items: flex-end; justify-content: center;
+  }
+  #prompt.open { display: flex; }
+  .prompt-body {
+    width: 100%; max-width: 520px; background: var(--panel);
+    border: 1px solid var(--border); border-bottom: none;
+    border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+    animation: slideup .22s ease-out;
+  }
+  @keyframes slideup { from { transform: translateY(40px); opacity: .4; } }
+  #promptTitle { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+  #promptInput {
+    width: 100%; padding: 13px 14px; font-size: 15px; color: var(--text);
+    background: #141414; border: 1px solid var(--border);
+    border-radius: 12px; outline: none; resize: none; font-family: inherit;
+  }
+  #promptInput:focus { border-color: var(--accent); }
+  .prompt-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .ghost {
+    flex: 1; padding: 13px; border-radius: 12px; cursor: pointer;
+    background: var(--raised); color: var(--text); border: 1px solid var(--border);
+    font-size: 14px; font-weight: 600;
+  }
+  .ghost:hover { background: var(--active); }
+  .prompt-actions .primary { margin-top: 0; }
+
+  #toast {
+    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(8px); z-index: 35;
+    background: rgba(28,28,28,.94); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 15px; border-radius: 999px; font-size: 12.5px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #hint {
+    position: absolute; left: 12px; bottom: 20px; z-index: 5; max-width: 270px;
+    background: rgba(20,20,20,.78); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 10px; padding: 8px 11px;
+    color: rgba(255,255,255,.92); font-size: 12px; line-height: 1.45; transition: opacity .4s;
+  }
+  body.sheet-open #hint { opacity: 0; }
+
+  #kbd { position: fixed; bottom: 0; left: 0; width: 10px; height: 10px; opacity: 0; border: none; }
+
+  /* ===== home (beranda) ===== */
+  #home {
+    position: absolute; inset: 0; z-index: 6; background: #161616; color: var(--text);
+    overflow-y: auto; transform: translateY(102%); transition: transform .28s cubic-bezier(.32,.72,.35,1);
+    padding-bottom: 40px;
+  }
+  body.home-open #home { transform: translateY(0); }
+  #home header {
+    position: sticky; top: 0; z-index: 2; background: rgba(22,22,22,.94);
+    border-bottom: 1px solid var(--border); padding: 14px 16px 12px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  #homeBack {
+    background: none; border: none; color: var(--text); font-size: 28px;
+    line-height: 1; padding: 4px 8px; cursor: pointer;
+  }
+  #home header h1 { margin: 0; font-size: 20px; }
+  #home header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  #homeEdit {
+    border: 1px solid var(--border); background: var(--raised); color: var(--text);
+    border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    font-family: inherit;
+  }
+  #homeEdit.on { background: rgba(139,114,240,.18); border-color: var(--accent); color: var(--accent); }
+  #home .searchbar { padding: 14px 16px 4px; }
+  #home .searchbar .box {
+    display: flex; align-items: center; gap: 9px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 999px; padding: 12px 16px;
+    color: var(--faint); font-size: 14px; cursor: pointer;
+  }
+  #home .searchbar svg { width: 17px; height: 17px; stroke: var(--faint); flex: 0 0 auto; }
+  #home .section { padding: 10px 16px 0; }
+  #home .section h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; text-transform: uppercase; letter-spacing: .6px; }
+  #homeGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 8px; padding: 18px 16px 8px; }
+  #homeGrid .tile {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; position: relative;
+  }
+  #homeGrid .tile .icon {
+    width: 60px; height: 60px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35); transition: transform .12s;
+  }
+  #homeGrid .tile:active .icon { transform: scale(.93); }
+  #homeGrid .tile .icon svg { width: 30px; height: 30px; }
+  #homeGrid .tile .label {
+    font-size: 11.5px; color: var(--text); text-align: center; max-width: 76px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #homeGrid .tile .del {
+    display: none; position: absolute; top: -7px; right: 2px; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--red); color: #fff; font-size: 15px; line-height: 1;
+    align-items: center; justify-content: center; border: 2px solid #161616;
+  }
+  body.home-editing #homeGrid .tile .del { display: flex; }
+  body.home-editing #homeGrid .tile .icon { animation: jiggle .3s infinite; }
+  @keyframes jiggle { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
+  #homeGrid .tile.add .icon { background: transparent; border: 1.5px dashed #454545; box-shadow: none; color: var(--muted); font-size: 28px; font-weight: 300; }
+  body.home-editing #homeGrid .tile.add { display: none; }
+  #homeDlg { position: fixed; inset: 0; z-index: 32; display: none; background: rgba(0,0,0,.6); align-items: center; justify-content: center; padding: 24px; }
+  #homeDlg.open { display: flex; }
+  #homeDlg .dlg-body { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 22px 20px; }
+  #homeDlg h3 { margin: 0 0 4px; font-size: 16px; }
+  #homeDlg p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+  #homeDlg label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
+  #homeDlg input {
+    width: 100%; padding: 11px 13px; font-size: 14px; color: var(--text);
+    background: #141414; border: 1px solid var(--border); border-radius: 10px; outline: none; font-family: inherit;
+  }
+  #homeDlg input:focus { border-color: var(--accent); }
+  #homeDlg .dlg-actions { display: flex; gap: 10px; margin-top: 18px; }
+  #homeDlg .dlg-actions button { flex: 1; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  #homeDlgCancel { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+  #homeDlgOk { background: var(--accent); color: #fff; border: none; }
+</style>
+</head>
+<body>
+
+<img id="screen" alt="" draggable="false">
+
+<div id="status">connecting…</div>
+<div id="latency"><i></i><span id="latencyMs">— ms</span></div>
+
+<div id="browserDown"><div class="bd-card">
+  <div class="bd-title">Chrome belum jalan di laptop</div>
+  <div class="bd-sub">Jalankan langsung dari sini, atau dari panel browser-relay di laptop. Layar di sini nyala sendiri begitu Chrome tersambung.</div>
+  <button class="bd-launch" id="launchChromeBtn">
+    <svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg>
+    Launch Chrome
+  </button>
+</div></div>
+
+<div id="hint">Webnya fullscreen &amp; bersih.<br>Pegangan kecil di tepi kanan itu tools-nya —<br>klik: muncul tombol bulat, klik lagi: buka tools.<br>Klik layar = tombolnya balik ngumpet.<br>Tahan &amp; geser buat mindahin posisinya.</div>
+
+<div id="backdrop"></div>
+
+<div id="toolsheet">
+  <div class="grip"></div>
+  <div class="addr">
+    <div class="url" id="urlBar" title="Open URL">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      <span id="urlText">—</span>
+    </div>
+    <div class="iconbtn" id="reloadBtn" title="Reload">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+    </div>
+    <div class="iconbtn" id="homeBtn" title="Beranda">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 10.5L12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg>
+    </div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="grid">
+    <button class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
+    <button class="tool" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>Forward</button>
+    <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</button>
+    <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
+    <button class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span id="desktopLabel">Desktop</span></button>
+    <button class="tool" data-act="zoom"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg><span id="zoomLabel">Zoom</span></button>
+    <button class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Find</button>
+    <button class="tool" data-act="chrome-stop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
+    <button class="tool" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+    <button class="tool" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+  </div>
+</div>
+
+<div id="fab" aria-label="tools">
+  <svg class="ico-grip" viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+  <svg class="ico-grid" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>
+  <svg class="ico-close" viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</div>
+
+<div id="toast"></div>
+
+<div id="auth"><div class="card">
+  <div class="dot"></div>
+  <h1>browser-relay</h1>
+  <p id="authDesc">Menghubungkan…</p>
+  <input id="token" type="text" inputmode="numeric" autocomplete="one-time-code"
+         maxlength="6" placeholder="••••••" style="display:none">
+  <button id="go" class="primary" style="display:none">Connect</button>
+  <button id="reqCode" class="primary" style="display:none">Minta Kode Pairing</button>
+  <div id="authErr"></div>
+</div></div>
+
+<div id="prompt"><div class="prompt-body">
+  <div id="promptTitle"></div>
+  <textarea id="promptInput" rows="3"></textarea>
+  <div class="prompt-actions">
+    <button id="promptCancel" class="ghost">Cancel</button>
+    <button id="promptOk" class="primary">OK</button>
+  </div>
+</div></div>
+
+<input id="kbd" type="text" autocomplete="off" autocapitalize="off">
+
+<div id="home">
+  <header>
+    <button id="homeBack" aria-label="Kembali">‹</button>
+    <div><h1>Beranda</h1><p>Shortcut ke situs favoritmu</p></div>
+    <button id="homeEdit">Edit</button>
+  </header>
+  <!-- Pairing card (mirip aplikasi native) -->
+  <div id="pairCard">
+    <h3>Hubungkan ke PC</h3>
+    <div class="steps"><span>○ Server</span><i>→</i><span>○ Chrome</span><i>→</i><span>○ Siap</span></div>
+    <p class="lbl">Pilih cara pairing:</p>
+    <label>Server (host:port)</label>
+    <input id="pairHost" placeholder="192.168.1.14:8765" inputmode="url">
+    <button id="pairReqBtn" class="primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      MINTA KODE PAIRING
+    </button>
+    <label>Kode dari panel PC (6 digit)</label>
+    <input id="pairCode" placeholder="••••••" inputmode="numeric" maxlength="6">
+    <button id="pairGoBtn" class="secondary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      HUBUNGKAN
+    </button>
+    <p class="hint">atau scan QR dari panel PC — otomatis kebuka</p>
+  </div>
+  <div class="searchbar"><div class="box" id="homeSearch">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <span>Cari atau ketik URL…</span>
+  </div></div>
+  <div class="section"><h2>Aplikasi</h2></div>
+  <div id="homeGrid"></div>
+</div>
+
+<div id="homeDlg"><div class="dlg-body">
+  <h3>Tambah shortcut</h3>
+  <p>Tersimpan di perangkat ini.</p>
+  <label>Nama</label>
+  <input id="homeDlgName" placeholder="cth: Facebook" maxlength="24">
+  <label>URL</label>
+  <input id="homeDlgUrl" placeholder="cth: facebook.com" inputmode="url">
+  <div class="dlg-actions">
+    <button id="homeDlgCancel">Batal</button>
+    <button id="homeDlgOk">Simpan</button>
+  </div>
+</div></div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

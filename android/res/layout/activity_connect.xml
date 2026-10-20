@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="28dp"
+    android:background="#161616">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Browser Relay"
+        android:textColor="#DADADA"
+        android:textSize="22sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="24dp"
+        android:text="Konek ke panel di laptop"
+        android:textColor="#9A9A9A"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Server (host:port)"
+        android:textColor="#9A9A9A"
+        android:textSize="12sp" />
+
+    <EditText
+        android:id="@+id/hostInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="14dp"
+        android:hint="192.168.1.10:8080"
+        android:textColor="#DADADA"
+        android:textColorHint="#6B6B6B"
+        android:inputType="textUri"
+        android:singleLine="true" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Kode pairing (6 digit)"
+        android:textColor="#9A9A9A"
+        android:textSize="12sp" />
+
+    <EditText
+        android:id="@+id/tokenInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="22dp"
+        android:hint="······"
+        android:textColor="#DADADA"
+        android:textColorHint="#6B6B6B"
+        android:inputType="number"
+        android:maxLength="6"
+        android:singleLine="true" />
+
+    <Button
+        android:id="@+id/connectBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Hubungkan"
+        android:backgroundTint="#8B72F0"
+        android:textColor="#FFFFFF" />
+
+    <Button
+        android:id="@+id/requestBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Minta Kode Pairing"
+        android:backgroundTint="#2A2A2A"
+        android:textColor="#DADADA" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:text="atau scan QR pairing dari panel laptop — aplikasinya kebuka otomatis."
+        android:textColor="#6B6B6B"
+        android:textSize="12sp"
+        android:gravity="center" />
+
+</LinearLayout>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Browser Relay</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body { background: #161616; color: #dadada; font-family: system-ui, sans-serif;
+         max-width: 480px; margin: 0 auto; overflow: hidden; }
+  .screen { display: none; height: 100vh; height: 100dvh; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* ---------- header ---------- */
+  .hdr { display: flex; align-items: center; padding: 14px 16px 12px; gap: 8px; }
+  .hdr .titles { flex: 1; }
+  .hdr h1 { font-size: 20px; font-weight: 700; }
+  .rbtn { width: 38px; height: 38px; border-radius: 50%; background: #2a2a2a; border: none;
+          display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+  .rbtn:active { background: #3a3a3a; }
+  .rbtn svg { width: 20px; height: 20px; stroke: #dadada; fill: none; stroke-width: 2;
+              stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- beranda ---------- */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .pair-card { margin: 4px 16px 8px; background: #1e1e1e; border: 1px solid #8b72f0;
+               border-radius: 14px; padding: 18px 16px; }
+  .pair-card h2 { font-size: 15px; margin-bottom: 4px; }
+  .pair-card .sub { font-size: 12px; color: #9a9a9a; margin-bottom: 14px; }
+  .fld-label { font-size: 12px; color: #9a9a9a; margin-bottom: 4px; }
+  .fld { background: #141414; border: 1px solid #333; border-radius: 8px; width: 100%;
+         padding: 11px 12px; font-size: 14px; color: #dadada; margin-bottom: 12px; outline: none; }
+  .fld:focus { border-color: #8b72f0; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px;
+         width: 100%; padding: 13px; border-radius: 10px; border: none;
+         font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+  .btn:active { opacity: .85; }
+  .btn svg { width: 18px; height: 18px; stroke: #fff; fill: none; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+  .btn.primary { background: #8b72f0; color: #fff; }
+  .btn.ghost { background: #262626; color: #dadada; border: 1px solid #333; font-weight: 500; }
+  .btn.ghost svg { stroke: #dadada; }
+  .btn:disabled { opacity: .6; }
+  .pair-note { font-size: 11px; color: #6b6b6b; text-align: center; }
+
+  .status-row { margin: 4px 16px 8px; background: #1e1e1e; border: 1px solid #333;
+                border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .status-row .dot { width: 10px; height: 10px; border-radius: 50%; background: #4caf50; flex-shrink: 0; }
+  .status-row .t { flex: 1; font-size: 13px; }
+  .status-row .t small { display: block; color: #9a9a9a; font-size: 11px; }
+  .mini-btn { background: #262626; border: 1px solid #4a2a2a; color: #ff8a8a; border-radius: 8px;
+              padding: 8px 10px; font-size: 12px; cursor: pointer; display: flex;
+              align-items: center; gap: 6px; }
+  .mini-btn svg { width: 15px; height: 15px; stroke: #ff8a8a; fill: none; stroke-width: 2;
+                  stroke-linecap: round; stroke-linejoin: round; }
+
+  .search { margin: 6px 16px 12px; background: #1e1e1e; border: 1px solid #333;
+            border-radius: 10px; padding: 12px; color: #6b6b6b; font-size: 13px; cursor: pointer; }
+  .sec-label { font-size: 12px; color: #9a9a9a; letter-spacing: 1px; padding: 8px 16px 0; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 12px 16px 30px; }
+  .grid.dim { opacity: .35; pointer-events: none; }
+  .app { text-align: center; cursor: pointer; }
+  .app:active .ic { transform: scale(.93); }
+  .app .ic { width: 52px; height: 52px; border-radius: 14px; margin: 0 auto 6px;
+             display: flex; align-items: center; justify-content: center; font-size: 24px;
+             transition: transform .1s; }
+  .app .nm { font-size: 11px; }
+
+  /* ---------- viewport ---------- */
+  .tabrow { display: flex; gap: 6px; padding: 10px 12px 0; }
+  .tab { background: #1e1e1e; border-radius: 8px 8px 0 0; padding: 8px 14px; font-size: 12px;
+         color: #9a9a9a; }
+  .tab.on { background: #262626; color: #dadada; }
+  .urlbar { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .urlbar .url { flex: 1; background: #1e1e1e; border-radius: 8px; padding: 9px 12px;
+                 font-size: 12px; color: #9a9a9a; white-space: nowrap; overflow: hidden; }
+  .viewport { flex: 1; background: #fff; margin: 0 8px; border-radius: 8px; position: relative;
+              display: flex; align-items: center; justify-content: center; }
+  .viewport .fake-page { text-align: center; color: #999; font-size: 13px; }
+  .viewport .fake-page .logo { font-size: 40px; margin-bottom: 12px; }
+  .latency { position: absolute; top: 10px; right: 10px; background: rgba(20,20,20,.85);
+             border-radius: 20px; padding: 5px 11px; font-size: 11px; color: #e8e8e8;
+             display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .latency .dot { width: 6px; height: 6px; border-radius: 50%; background: #4caf50; }
+  .fab { position: absolute; bottom: 90px; right: 18px; width: 54px; height: 54px;
+         border-radius: 50%; background: #8b72f0; border: none; cursor: pointer;
+         display: flex; align-items: center; justify-content: center;
+         box-shadow: 0 4px 14px rgba(139,114,240,.4); }
+  .fab:active { transform: scale(.94); }
+  .fab svg { width: 24px; height: 24px; stroke: #fff; fill: none; stroke-width: 2;
+             stroke-linecap: round; stroke-linejoin: round; }
+  .v-actions { padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; gap: 10px; }
+  .v-actions .btn { margin: 0; }
+
+  /* ---------- tool sheet ---------- */
+  .sheet-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; z-index: 40; }
+  .sheet-scrim.open { display: block; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; max-width: 480px; margin: 0 auto;
+           background: #1e1e1e; border-radius: 18px 18px 0 0; padding: 10px 16px 26px;
+           transform: translateY(105%); transition: transform .25s ease; z-index: 41; }
+  .sheet.open { transform: translateY(0); }
+  .sheet .grab { width: 40px; height: 4px; border-radius: 2px; background: #444; margin: 0 auto 14px; }
+  .tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .tool { text-align: center; cursor: pointer; }
+  .tool:active { opacity: .7; }
+  .tool .tic { width: 48px; height: 48px; border-radius: 12px; background: #2a2a2a;
+               margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; }
+  .tool .tic svg { width: 22px; height: 22px; stroke: #dadada; fill: none; stroke-width: 2;
+                   stroke-linecap: round; stroke-linejoin: round; }
+  .tool .tnm { font-size: 10px; color: #9a9a9a; }
+
+  /* ---------- toast ---------- */
+  .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px);
+           background: #2a2a2a; color: #dadada; padding: 10px 18px; border-radius: 10px;
+           font-size: 13px; opacity: 0; transition: all .25s; z-index: 60; pointer-events: none;
+           max-width: 90%; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ================= BERANDA ================= -->
+<div class="screen active" id="scr-home">
+  <div class="hdr">
+    <div class="titles"><h1>Beranda</h1></div>
+    <button class="rbtn" id="btn-back" title="Kembali">
+      <svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+    </button>
+    <button class="rbtn" id="btn-edit" title="Edit">
+      <svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+    </button>
+  </div>
+  <div class="scroll">
+    <!-- pairing card: visible when unpaired -->
+    <div class="pair-card" id="pair-card">
+      <h2>Hubungkan ke PC</h2>
+      <div class="sub">Pilih cara pairing:</div>
+      <div class="fld-label">Server (host:port)</div>
+      <input class="fld" id="in-host" value="192.168.1.10:8765">
+      <button class="btn primary" id="btn-req">
+        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span>Minta Kode Pairing</span>
+      </button>
+      <div class="fld-label">Kode dari panel PC (6 digit)</div>
+      <input class="fld" id="in-code" placeholder="••••••" maxlength="6" inputmode="numeric"
+             style="letter-spacing:10px;text-align:center;font-size:20px">
+      <button class="btn ghost" id="btn-connect">
+        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span>Hubungkan</span>
+      </button>
+      <div class="pair-note">atau scan QR dari panel PC — otomatis kebuka</div>
+    </div>
+    <!-- status row: visible when paired -->
+    <div class="status-row" id="status-row" style="display:none">
+      <div class="dot"></div>
+      <div class="t">Terhubung ke PC<small id="status-host">192.168.1.10:8765</small></div>
+      <button class="mini-btn" id="btn-disconnect">
+        <svg viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7"/><path d="M15 7h2a5 5 0 0 1 4 8"/><line x1="8" x2="12" y1="12" y2="12"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+        Putus
+      </button>
+    </div>
+    <div class="search" id="search-box">🔍&nbsp; Cari atau ketik URL…</div>
+    <div class="sec-label">APLIKASI</div>
+    <div class="grid dim" id="app-grid"></div>
+  </div>
+</div>
+
+<!-- ================= VIEWPORT ================= -->
+<div class="screen" id="scr-view">
+  <div class="tabrow">
+    <div class="tab on" id="tab-title">google.com</div>
+  </div>
+  <div class="urlbar">
+    <div class="url" id="url-text">🔒 google.com</div>
+  </div>
+  <div class="viewport">
+    <div class="fake-page">
+      <div class="logo" id="page-emoji">🌐</div>
+      <div id="page-name">google.com</div>
+      <div style="font-size:11px;margin-top:6px">mirror dari Chrome di PC</div>
+    </div>
+    <div class="latency" id="latency-pill"><span class="dot"></span><span id="latency-ms">12 ms</span></div>
+    <button class="fab" id="fab">
+      <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    </button>
+  </div>
+  <div class="v-actions">
+    <button class="btn ghost" id="btn-to-home">
+      <svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+      <span>Beranda</span>
+    </button>
+    <button class="btn ghost" id="btn-disconnect2" style="color:#ff8a8a">
+      <svg viewBox="0 0 24 24" style="stroke:#ff8a8a"><path d="M9 17H7A5 5 0 0 1 7 7"/><path d="M15 7h2a5 5 0 0 1 4 8"/><line x1="8" x2="12" y1="12" y2="12"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+      <span>Putus</span>
+    </button>
+  </div>
+</div>
+
+<!-- tool sheet -->
+<div class="sheet-scrim" id="sheet-scrim"></div>
+<div class="sheet" id="sheet">
+  <div class="grab"></div>
+  <div class="tool-grid">
+    <div class="tool" data-t="Back"><div class="tic"><svg viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></div><div class="tnm">Back</div></div>
+    <div class="tool" data-t="Forward"><div class="tic"><svg viewBox="0 0 24 24"><path d="m12 5 7 7-7 7"/><path d="M5 12h14"/></svg></div><div class="tnm">Forward</div></div>
+    <div class="tool" data-t="Reload"><div class="tic"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg></div><div class="tnm">Reload</div></div>
+    <div class="tool" data-t="Tab baru"><div class="tic"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div><div class="tnm">Tab baru</div></div>
+    <div class="tool" data-t="Keyboard"><div class="tic"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg></div><div class="tnm">Keyboard</div></div>
+    <div class="tool" data-t="Paste"><div class="tic"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg></div><div class="tnm">Paste</div></div>
+    <div class="tool" data-t="Zoom"><div class="tic"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></div><div class="tnm">Zoom</div></div>
+    <div class="tool" data-t="Desktop"><div class="tic"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></div><div class="tnm">Desktop</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  var paired = false;
+  var apps = [
+    ["Google","https://google.com","🌐","#4285F4"],
+    ["YouTube","https://youtube.com","▶️","#FF0000"],
+    ["GitHub","https://github.com","🐙","#6e5494"],
+    ["Kompas","https://kompas.com","📰","#1a73e8"],
+    ["WA Web","https://web.whatsapp.com","💬","#25D366"],
+    ["Spotify","https://open.spotify.com","🎵","#1DB954"],
+    ["Gmail","https://mail.google.com","📧","#EA4335"],
+    ["Tokped","https://tokopedia.com","🛒","#03AC0E"]
+  ];
+
+  function $(id){ return document.getElementById(id); }
+  function toast(msg){
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove("show"); }, 2200);
+  }
+  function go(id){
+    document.querySelectorAll(".screen").forEach(function(s){ s.classList.remove("active"); });
+    $(id).classList.add("active");
+  }
+  function renderApps(){
+    var g = $("app-grid"); g.innerHTML = "";
+    apps.forEach(function(a){
+      var d = document.createElement("div");
+      d.className = "app";
+      d.innerHTML = '<div class="ic" style="background:'+a[3]+'22">'+a[2]+'</div><div class="nm">'+a[0]+'</div>';
+      d.onclick = function(){ openUrl(a[1], a[0], a[2]); };
+      g.appendChild(d);
+    });
+    g.classList.toggle("dim", !paired);
+  }
+  function setPaired(p){
+    paired = p;
+    $("pair-card").style.display = p ? "none" : "block";
+    $("status-row").style.display = p ? "flex" : "none";
+    if(p) $("status-host").textContent = $("in-host").value || "192.168.1.10:8765";
+    renderApps();
+  }
+  function openUrl(url, name, emoji){
+    var host = url.replace("https://","").replace("http://","").split("/")[0];
+    $("url-text").textContent = "🔒 " + host;
+    $("tab-title").textContent = host;
+    $("page-name").textContent = host;
+    $("page-emoji").textContent = emoji;
+    go("scr-view");
+  }
+
+  // --- pairing flow ---
+  $("btn-req").onclick = function(){
+    var b = this;
+    b.disabled = true;
+    b.querySelector("span").textContent = "Menunggu panel PC…";
+    toast("Cek panel di PC — ketik kode yang muncul");
+    setTimeout(function(){
+      b.disabled = false;
+      b.querySelector("span").textContent = "Minta Kode Pairing";
+      $("in-code").value = "482913";
+      toast("Kode diterima dari panel (simulasi)");
+    }, 2500);
+  };
+  $("btn-connect").onclick = function(){
+    var code = $("in-code").value.trim();
+    if(code.length !== 6){ toast("Kode harus 6 digit"); return; }
+    toast("Menghubungkan…");
+    setTimeout(function(){
+      setPaired(true);
+      toast("Terhubung ke PC");
+    }, 1200);
+  };
+  function doDisconnect(){
+    setPaired(false);
+    $("in-code").value = "";
+    go("scr-home");
+    toast("Terputus");
+  }
+  $("btn-disconnect").onclick = doDisconnect;
+  $("btn-disconnect2").onclick = doDisconnect;
+  $("btn-back").onclick = function(){
+    if(paired){ doDisconnect(); }
+    else { toast("Belum terhubung"); }
+  };
+
+  // --- edit mode ---
+  var editing = false;
+  $("btn-edit").onclick = function(){
+    editing = !editing;
+    this.querySelector("svg").innerHTML = editing
+      ? '<path d="M20 6 9 17l-5-5"/>'
+      : '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>';
+    toast(editing ? "Mode edit: tahan aplikasi untuk hapus" : "Selesai edit");
+  };
+
+  // --- search ---
+  $("search-box").onclick = function(){
+    if(!paired){ toast("Hubungkan dulu ke PC"); return; }
+    var u = prompt("Ketik URL atau pencarian:", "");
+    if(u) openUrl(u.indexOf("://")<0 ? "https://"+u : u, u, "🌐");
+  };
+
+  // --- viewport nav ---
+  $("btn-to-home").onclick = function(){ go("scr-home"); };
+  $("latency-pill").onclick = function(){ toast("Menghubungkan… (reconnect)"); };
+
+  // --- tool sheet ---
+  var sheet = $("sheet"), scrim = $("sheet-scrim");
+  function openSheet(){ sheet.classList.add("open"); scrim.classList.add("open"); }
+  function closeSheet(){ sheet.classList.remove("open"); scrim.classList.remove("open"); }
+  $("fab").onclick = openSheet;
+  scrim.onclick = closeSheet;
+  document.querySelectorAll(".tool").forEach(function(t){
+    t.onclick = function(){ closeSheet(); toast(t.dataset.t); };
+  });
+
+  renderApps();
+</script>
+</body>
+</html>

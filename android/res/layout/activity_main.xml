@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- fullscreen remote viewport -->
+    <com.hafidz.browserrelay.FrameView
+        android:id="@+id/frame"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- "Chrome isn't running" overlay, driven by welcome/status -->
+    <LinearLayout
+        android:id="@+id/browserDown"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp"
+        android:background="#D8000000"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Chrome belum jalan di laptop"
+            android:textColor="#DADADA"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Jalankan langsung dari sini — halamannya akan muncul begitu Chrome tersambung."
+            android:textColor="#9A9A9A"
+            android:textSize="13sp"
+            android:gravity="center" />
+
+        <Button
+            android:id="@+id/launchChromeBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Launch Chrome"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#8B72F0" />
+    </LinearLayout>
+
+    <!-- latency pill, top-right -->
+    <LinearLayout
+        android:id="@+id/latencyPill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="10dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="9dp"
+        android:paddingEnd="9dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:background="@drawable/pill_bg">
+
+        <View
+            android:id="@+id/latencyDot"
+            android:layout_width="6dp"
+            android:layout_height="6dp"
+            android:background="@drawable/dot" />
+
+        <TextView
+            android:id="@+id/latencyText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:text="— ms"
+            android:textColor="#E8E8E8"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- first-run hint bubble -->
+    <TextView
+        android:id="@+id/hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginBottom="20dp"
+        android:maxWidth="250dp"
+        android:padding="9dp"
+        android:background="@drawable/hint_bg"
+        android:text="Webnya fullscreen &amp; bersih.\nPegangan kecil di tepi itu tools-nya — tap: muncul tombol bulat, tap lagi: buka tools.\nTap layar = tombolnya balik ngumpet.\nTahan &amp; geser buat mindahin posisinya."
+        android:textColor="#EBFFFFFF"
+        android:textSize="12sp"
+        android:lineSpacingExtra="2dp"
+        android:visibility="gone" />
+
+    <!-- sheet backdrop -->
+    <View
+        android:id="@+id/backdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#40000000"
+        android:visibility="gone" />
+
+    <!-- tools bottom sheet -->
+    <LinearLayout
+        android:id="@+id/sheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="14dp"
+        android:background="@drawable/sheet_bg"
+        android:visibility="invisible">
+
+        <View
+            android:layout_width="38dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/grip_bg" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:paddingTop="9dp"
+                android:paddingBottom="9dp"
+                android:background="@drawable/url_bg">
+
+                <ImageView
+                    android:layout_width="13dp"
+                    android:layout_height="13dp"
+                    android:src="@drawable/ic_lock" />
+
+                <TextView
+                    android:id="@+id/urlText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="7dp"
+                    android:text="—"
+                    android:textColor="#DADADA"
+                    android:textSize="13sp"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+            </LinearLayout>
+
+            <ImageButton
+                android:id="@+id/reloadBtn"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/circle_btn_bg"
+                android:src="@drawable/ic_reload"
+                android:contentDescription="Reload" />
+
+            <ImageButton
+                android:id="@+id/homeBtn"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/circle_btn_bg"
+                android:src="@drawable/ic_home"
+                android:contentDescription="Beranda" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="TAB TERBUKA"
+            android:textColor="#9A9A9A"
+            android:textSize="11sp"
+            android:letterSpacing="0.1" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/tabRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical" />
+        </HorizontalScrollView>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="SHORTCUT"
+            android:textColor="#9A9A9A"
+            android:textSize="11sp"
+            android:letterSpacing="0.1" />
+
+        <GridLayout
+            android:id="@+id/sheetShortcuts"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:columnCount="4" />
+
+        <GridLayout
+            android:id="@+id/toolGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:columnCount="4" />
+    </LinearLayout>
+
+    <!-- edge handle sits above everything -->
+    <com.hafidz.browserrelay.EdgeHandleView
+        android:id="@+id/handle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+    <!-- hidden input for the soft keyboard path -->
+    <EditText
+        android:id="@+id/kbd"
+        android:layout_width="1dp"
+        android:layout_height="1dp"
+        android:background="@android:color/transparent"
+        android:textColor="@android:color/transparent"
+        android:cursorVisible="false"
+        android:inputType="text"
+        android:imeOptions="actionNone" />
+
+</FrameLayout>

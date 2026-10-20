@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mock: Beranda + Pairing gabung</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #161616; color: #dadada; font-family: system-ui, sans-serif;
+         max-width: 420px; margin: 0 auto; min-height: 100vh; }
+  .phone { border: 1px solid #333; min-height: 100vh; display: flex; flex-direction: column; }
+  /* header */
+  .hdr { display: flex; align-items: center; padding: 14px 16px 12px; }
+  .hdr .titles { flex: 1; }
+  .hdr h1 { font-size: 20px; font-weight: 700; }
+  .hdr p { font-size: 12px; color: #9a9a9a; }
+  .rbtn { width: 38px; height: 38px; border-radius: 50%; background: #2a2a2a;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 18px; margin-left: 8px; cursor: pointer; border: none; color: #dadada; }
+  /* pairing card (unpaired state) */
+  .pair-card { margin: 4px 16px 12px; background: #1e1e1e; border: 1px solid #8b72f0;
+               border-radius: 14px; padding: 18px 16px; }
+  .pair-card h2 { font-size: 15px; margin-bottom: 4px; }
+  .pair-card .sub { font-size: 12px; color: #9a9a9a; margin-bottom: 14px; }
+  .fld-label { font-size: 12px; color: #9a9a9a; margin-bottom: 4px; }
+  .fld { background: #141414; border: 1px solid #333; border-radius: 8px;
+         padding: 11px 12px; font-size: 14px; color: #dadada; width: 100%; margin-bottom: 12px; }
+  .btn { display: block; width: 100%; padding: 13px; border-radius: 10px; border: none;
+         font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 10px; }
+  .btn.primary { background: #8b72f0; color: #fff; }
+  .btn.ghost { background: #262626; color: #dadada; border: 1px solid #333; font-weight: 500; }
+  .pair-card .note { font-size: 11px; color: #6b6b6b; text-align: center; }
+  /* paired state: card collapses to a status row */
+  .status-row { margin: 4px 16px 12px; background: #1e1e1e; border: 1px solid #333;
+                border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: #4caf50; margin-right: 10px; }
+  .status-row .t { flex: 1; font-size: 13px; }
+  .status-row .t small { display: block; color: #9a9a9a; font-size: 11px; }
+  .status-row button { background: none; border: none; color: #8b72f0; font-size: 13px; cursor: pointer; }
+  /* beranda grid */
+  .search { margin: 0 16px 12px; background: #1e1e1e; border: 1px solid #333;
+            border-radius: 10px; padding: 12px; color: #6b6b6b; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+          padding: 0 16px; }
+  .app { text-align: center; opacity: 0.35; }
+  .app.on { opacity: 1; }
+  .app .ic { width: 52px; height: 52px; border-radius: 14px; background: #2a2a2a;
+             margin: 0 auto 6px; display: flex; align-items: center; justify-content: center;
+             font-size: 24px; }
+  .app .nm { font-size: 11px; }
+  .sec-toggle { text-align: center; margin: 18px 0 40px; }
+  .sec-toggle button { background: #2a2a2a; color: #dadada; border: 1px solid #444;
+                       border-radius: 8px; padding: 10px 18px; font-size: 13px; cursor: pointer; }
+  .caption { padding: 14px 16px; font-size: 12px; color: #8b72f0; border-top: 1px solid #333; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="hdr">
+    <div class="titles"><h1>Beranda</h1><p>Shortcut ke situs favoritmu</p></div>
+    <button class="rbtn" title="Kembali ke pairing">←</button>
+    <button class="rbtn" title="Edit">✎</button>
+  </div>
+
+  <!-- STATE 1: belum pair -->
+  <div id="s1">
+    <div class="pair-card">
+      <h2>🔗 Hubungkan ke PC</h2>
+      <div class="sub">Pilih cara pairing:</div>
+      <div class="fld-label">Server (host:port)</div>
+      <input class="fld" value="192.168.1.10:8765">
+      <button class="btn primary">Minta Kode Pairing</button>
+      <div class="fld-label">Kode dari panel PC (6 digit)</div>
+      <input class="fld" placeholder="••••••" style="letter-spacing:8px;text-align:center">
+      <button class="btn ghost">Hubungkan</button>
+      <div class="note">atau scan QR dari panel — otomatis kebuka</div>
+    </div>
+    <div class="search">🔍 Cari atau ketik URL…</div>
+    <div class="grid" id="g1"></div>
+    <div class="caption">⬆ State BELUM PAIR: shortcut redup (nonaktif), pairing card di atas. Satu layar, nggak pindah activity.</div>
+  </div>
+
+  <!-- STATE 2: sudah pair -->
+  <div id="s2" style="display:none">
+    <div class="status-row">
+      <div class="dot"></div>
+      <div class="t">Terhubung ke PC<small>192.168.1.10:8765 · 12 ms</small></div>
+      <button>Putus</button>
+    </div>
+    <div class="search">🔍 Cari atau ketik URL…</div>
+    <div class="grid" id="g2"></div>
+    <div class="caption">⬆ State SUDAH PAIR: card jadi status row ramping. Tombol ← di header balik ke pairing.</div>
+  </div>
+
+  <div class="sec-toggle">
+    <button onclick="toggle()">🔄 Toggle: belum pair / sudah pair</button>
+  </div>
+</div>
+<script>
+  var apps = [["🌐","Google"],["▶️","YouTube"],["🐙","GitHub"],["📰","Kompas"],["💬","WA Web"],["🎵","Spotify"],["📧","Gmail"],["⚙️","Setting"]];
+  function fill(id, on) {
+    var g = document.getElementById(id);
+    apps.forEach(function(a){
+      var d = document.createElement("div");
+      d.className = "app" + (on ? " on" : "");
+      d.innerHTML = '<div class="ic">'+a[0]+'</div><div class="nm">'+a[1]+'</div>';
+      g.appendChild(d);
+    });
+  }
+  fill("g1", false); fill("g2", true);
+  var s = 1;
+  function toggle() {
+    s = s === 1 ? 2 : 1;
+    document.getElementById("s1").style.display = s === 1 ? "block" : "none";
+    document.getElementById("s2").style.display = s === 1 ? "block" : "none";
+  }
+</script>
+</body>
+</html>

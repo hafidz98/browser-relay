@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>browser-relay — mock client Android</title>
+<style>
+  :root {
+    --panel: #1e1e1e; --raised: #262626; --active: #2f2f2f; --border: #303030;
+    --text: #dadada; --muted: #9a9a9a; --faint: #6b6b6b;
+    --accent: #8b72f0; --green: #3fb950;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #000; }
+
+  /* ===== fake web content (the remote Chrome viewport) ===== */
+  #web { position: absolute; inset: 0; overflow-y: auto; background: #fff; color: #202122; }
+  #web .sitebar { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 12px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; }
+  #web .logo { font-family: Georgia, serif; font-size: 20px; }
+  #web .logo b { color: #3366cc; }
+  #web .searchpill { flex: 1; background: #f0f0f0; border-radius: 999px; padding: 7px 14px; color: #72777d; font-size: 13px; }
+  #web article { padding: 18px 18px 120px; }
+  #web h1 { font-family: Georgia, serif; font-weight: 400; font-size: 27px; margin: 4px 0 6px; }
+  #web .byline { color: #72777d; font-size: 12.5px; border-bottom: 1px solid #eaecf0; padding-bottom: 12px; margin-bottom: 14px; }
+  #web .hero { height: 180px; border-radius: 8px; background: linear-gradient(135deg, #7fb2e0, #3366cc 60%, #2a4b8d); position: relative; overflow: hidden; margin-bottom: 6px; }
+  #web .hero::after { content: ""; position: absolute; right: -30px; bottom: -50px; width: 170px; height: 170px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  #web .cap { color: #72777d; font-size: 12px; margin-bottom: 14px; }
+  #web p { font-size: 15.5px; line-height: 1.65; margin: 0 0 14px; }
+  #web h2 { font-family: Georgia, serif; font-weight: 400; font-size: 21px; margin: 22px 0 8px; }
+  #web .thumbrow { display: flex; gap: 8px; margin: 6px 0 14px; }
+  #web .thumb { flex: 1; height: 84px; border-radius: 8px; }
+  #web .t1 { background: linear-gradient(135deg, #f6c453, #e07a3f); }
+  #web .t2 { background: linear-gradient(135deg, #57ab7a, #2c6e49); }
+  #web .t3 { background: linear-gradient(135deg, #b388eb, #6c4ab0); }
+
+  /* ===== floating bits ===== */
+  #latency {
+    position: absolute; top: 10px; right: 10px; z-index: 5;
+    background: rgba(20,20,20,.72); color: #e8e8e8; backdrop-filter: blur(4px);
+    font-size: 11px; padding: 4px 9px; border-radius: 999px; display: flex; gap: 5px; align-items: center;
+  }
+  #latency i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: block; }
+
+  /* tools handle: docked to a screen edge, semi-transparent, draggable.
+     Default = small pill stuck to the right edge. Tap opens the sheet;
+     when the sheet is open it becomes the round purple × button. */
+  #fab {
+    position: absolute; right: 0; top: 60%; z-index: 20;
+    width: 20px; height: 56px; border-radius: 11px 0 0 11px;
+    border: 1px solid rgba(255,255,255,.10); border-right: none;
+    background: rgba(24,24,24,.55); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,.30);
+    transition: opacity .35s, width .18s, height .18s, border-radius .18s, background .18s, transform .18s, left .18s, right .18s, top .18s;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  #fab svg { stroke: var(--accent); }
+  #fab .ico-grip { width: 13px; height: 13px; }
+  #fab .ico-grid { display: none; width: 21px; height: 21px; }
+  #fab .ico-close { display: none; width: 21px; height: 21px; }
+  #fab.side-left { border-radius: 0 11px 11px 0; border: 1px solid rgba(255,255,255,.10); border-left: none; }
+  #fab.side-left .ico-grip { transform: scaleX(-1); }
+  #fab.idle { opacity: .38; }
+  /* step 1 of the tap: handle pops out of the edge as a round button.
+     Sits 14px inside the edge at the dock height. Tap again -> sheet. */
+  #fab.round {
+    width: 50px; height: 50px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(24,24,24,.92); opacity: 1;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  #fab.round .ico-grip { display: none; }
+  #fab.round .ico-grid { display: block; }
+  #fab.dragging { opacity: 1; transition: none; background: rgba(24,24,24,.85); }
+  #fab.open {
+    left: auto !important; top: auto !important; right: 16px !important; bottom: 22px;
+    width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(139,114,240,.92); opacity: 1;
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+  }
+  #fab.open .ico-grip { display: none; }
+  #fab.open .ico-grid { display: none; }
+  #fab.open .ico-close { display: block; stroke: #fff; }
+
+  #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .22s; }
+  body.sheet-open #backdrop { opacity: 1; pointer-events: auto; }
+
+  /* ===== tools sheet ===== */
+  #sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 15;
+    background: var(--panel); border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    transform: translateY(calc(100% + 10px)); transition: transform .26s cubic-bezier(.32,.72,.35,1);
+    box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
+  }
+  body.sheet-open #sheet { transform: translateY(0); }
+  #sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d; margin: 2px auto 12px; }
+
+  .addr { display: flex; gap: 8px; align-items: center; }
+  .addr .url {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+    background: #141414; border: 1px solid var(--border); border-radius: 999px;
+    padding: 9px 13px; font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .addr .url svg { width: 13px; height: 13px; stroke: var(--green); flex: 0 0 auto; }
+  .iconbtn {
+    width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--raised); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .iconbtn svg { width: 17px; height: 17px; stroke: var(--text); }
+  .iconbtn:active { background: var(--active); }
+
+  .tabs { display: flex; gap: 7px; margin: 12px 0 4px; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto; max-width: 148px; display: flex; align-items: center; gap: 7px;
+    background: var(--raised); border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 11px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tab.on { background: rgba(139,114,240,.16); border-color: rgba(139,114,240,.55); color: var(--text); }
+  .tab .fav { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+  .tab .x { opacity: .6; font-size: 14px; line-height: 1; margin-left: 1px; }
+  #newtab { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 1px dashed #454545;
+    background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+  .tool { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 11px 2px 9px;
+    border-radius: 12px; cursor: pointer; color: var(--text); font-size: 11px; }
+  .tool:active { background: var(--raised); }
+  .tool.dim { color: var(--faint); }
+  .tool svg { width: 21px; height: 21px; stroke: currentColor; }
+  .tool .on-dot { color: var(--accent); }
+
+  #toast {
+    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(8px); z-index: 30;
+    background: rgba(28,28,28,.94); color: var(--text); border: 1px solid var(--border);
+    padding: 8px 15px; border-radius: 999px; font-size: 12.5px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  #hint {
+    position: absolute; left: 12px; bottom: 20px; z-index: 5; max-width: 250px;
+    background: rgba(20,20,20,.78); backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 10px; padding: 8px 11px;
+    color: rgba(255,255,255,.92); font-size: 12px; line-height: 1.45; transition: opacity .4s;
+  }
+  body.sheet-open #hint { opacity: 0; }
+</style>
+</head>
+<body>
+
+<!-- fullscreen web viewport (mock content) -->
+<div id="web">
+  <div class="sitebar">
+    <div class="logo">Contoh<b>Web</b></div>
+    <div class="searchpill">Cari artikel…</div>
+  </div>
+  <article>
+    <h1 id="pageTitle">Kucing Domestik, Sahabat Manusia Sejak 9.000 Tahun</h1>
+    <div class="byline">Ditulis oleh Redaksi · 11 Oktober 2026 · 4 menit baca</div>
+    <div class="hero"></div>
+    <div class="cap">Ilustrasi: kucing domestik (Felis catus) beristirahat di bawah sinar matahari sore.</div>
+    <p>Kucing domestik adalah salah satu hewan peliharaan paling populer di dunia. Bukti arkeologis menunjukkan domestikasi kucing dimulai sekitar 9.000 tahun lalu di kawasan Timur Dekat, seiring manusia mulai bercocok tanam dan menyimpan hasil panen.</p>
+    <p>Gudang gandum menarik tikus, tikus menarik kucing, dan dari sanalah hubungan saling menguntungkan ini bermula. Berbeda dengan anjing yang dibiakkan untuk tugas tertentu, kucing pada dasarnya mendomestikasi dirinya sendiri.</p>
+    <h2>Perilaku dan komunikasi</h2>
+    <div class="thumbrow"><div class="thumb t1"></div><div class="thumb t2"></div><div class="thumb t3"></div></div>
+    <p>Kucing berkomunikasi lewat kombinasi suara, bahasa tubuh, dan aroma. Mengeong, misalnya, hampir eksklusif ditujukan kepada manusia — kucing dewasa jarang mengeong satu sama lain.</p>
+    <p>Dengkuran (purring) muncul pada frekuensi 25–150 Hz. Menariknya, frekuensi ini dikaitkan dengan stimulasi penyembuhan tulang dan jaringan pada kucing itu sendiri.</p>
+    <h2>Merawat kucing di rumah</h2>
+    <p>Kebutuhan dasarnya sederhana: makanan bergizi, air bersih, kotak pasir yang terjaga, dan waktu bermain. Sisanya — kesetiaan, kehangatan, dan sesekali menjatuhkan gelas dari meja — datang sebagai bonus.</p>
+  </article>
+</div>
+
+<div id="latency"><i></i>42 ms</div>
+<div id="hint">Webnya fullscreen &amp; bersih.<br>Pegangan kecil di tepi kanan itu tools-nya —<br>tap: muncul tombol bulat, tap lagi: buka tools.<br>Tap layar = tombolnya balik ngumpet.<br>Tahan &amp; geser buat mindahin posisinya.</div>
+
+<div id="backdrop"></div>
+
+<!-- tools sheet -->
+<div id="sheet">
+  <div class="grip"></div>
+  <div class="addr">
+    <div class="url">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      <span id="urlText">contoh.web/kucing-domestik</span>
+    </div>
+    <div class="iconbtn" data-act="reload"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg></div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-url="contoh.web/kucing-domestik" data-title="Kucing Domestik, Sahabat Manusia Sejak 9.000 Tahun"><span class="fav" style="background:#3366cc"></span>Kucing Domestik<span class="x">×</span></div>
+    <div class="tab" data-url="google.com" data-title="Google — Pencarian"><span class="fav" style="background:#ea4335"></span>Google<span class="x">×</span></div>
+    <div class="tab" data-url="github.com" data-title="GitHub — Jelajahi repositori"><span class="fav" style="background:#888"></span>GitHub<span class="x">×</span></div>
+    <button id="newtab">+</button>
+  </div>
+
+  <div class="grid">
+    <div class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>Back</div>
+    <div class="tool dim" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>Forward</div>
+    <div class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</div>
+    <div class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</div>
+    <div class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Desktop</div>
+    <div class="tool" data-act="zoom"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>Zoom</div>
+    <div class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Find</div>
+    <div class="tool" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</div>
+  </div>
+</div>
+
+<div id="fab" aria-label="tools">
+  <svg class="ico-grip" viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+  <svg class="ico-grid" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>
+  <svg class="ico-close" viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  var body = document.body, fab = document.getElementById("fab"),
+      toastEl = document.getElementById("toast"), tTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add("show");
+    clearTimeout(tTimer); tTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 1700);
+  }
+  function toggleSheet(force) {
+    var open = typeof force === "boolean" ? force : !body.classList.contains("sheet-open");
+    body.classList.toggle("sheet-open", open);
+    fab.classList.toggle("open", open);
+    clearTimeout(roundTimer);
+    if (open) { fab.classList.remove("idle", "round"); clearTimeout(idleTimer); }
+    else {
+      // land back as a docked handle on whichever edge it lives
+      var leftSide = fab.classList.contains("side-left");
+      fab.style.left = leftSide ? "0px" : "auto";
+      fab.style.right = leftSide ? "auto" : "0px";
+      armIdle();
+    }
+    var hint = document.getElementById("hint"); if (hint) hint.style.display = "none";
+  }
+
+  /* ---- edge handle: tap 1 pops a round button out of the edge, tap 2 opens
+         the sheet; drag moves it, release snaps to nearest edge ---- */
+  var drag = null, idleTimer = null, roundTimer = null;
+  function popRound() {
+    var r = fab.getBoundingClientRect();
+    var leftSide = fab.classList.contains("side-left");
+    fab.style.top = r.top + "px";
+    fab.style.left = leftSide ? "14px" : "auto";
+    fab.style.right = leftSide ? "auto" : "14px";
+    fab.classList.add("round"); fab.classList.remove("idle");
+    clearTimeout(idleTimer); clearTimeout(roundTimer);
+    roundTimer = setTimeout(collapseRound, 3500); // ignored -> slips back into the edge
+  }
+  function collapseRound() {
+    if (!fab.classList.contains("round") || body.classList.contains("sheet-open")) return;
+    var leftSide = fab.classList.contains("side-left");
+    fab.classList.remove("round");
+    fab.style.left = leftSide ? "0px" : "auto";
+    fab.style.right = leftSide ? "auto" : "0px";
+    armIdle();
+  }
+  function armIdle() {
+    fab.classList.remove("idle");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (!body.classList.contains("sheet-open")) fab.classList.add("idle");
+    }, 3500);
+  }
+  fab.addEventListener("pointerdown", function (e) {
+    drag = { x: e.clientX, y: e.clientY, moved: false, wasOpen: body.classList.contains("sheet-open") };
+    if (drag.wasOpen) return;
+    try { fab.setPointerCapture(e.pointerId); } catch (err) {}
+    fab.classList.remove("idle"); clearTimeout(idleTimer); clearTimeout(roundTimer);
+  });
+  fab.addEventListener("pointermove", function (e) {
+    if (!drag || drag.wasOpen) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 7) {
+      drag.moved = true; fab.classList.add("dragging");
+      var r = fab.getBoundingClientRect();
+      drag.offX = drag.x - r.left; drag.offY = drag.y - r.top;
+      fab.style.width = "50px"; fab.style.height = "50px"; fab.style.borderRadius = "50%";
+    }
+    if (drag.moved) {
+      drag.nx = Math.min(Math.max(e.clientX - drag.offX, 4), innerWidth - 54);
+      drag.ny = Math.min(Math.max(e.clientY - drag.offY, 48), innerHeight - 140);
+      fab.style.left = drag.nx + "px"; fab.style.top = drag.ny + "px"; fab.style.right = "auto";
+    }
+  });
+  fab.addEventListener("pointerup", function () {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (d.wasOpen) { toggleSheet(false); return; }
+    fab.classList.remove("dragging");
+    fab.style.width = ""; fab.style.height = ""; fab.style.borderRadius = "";
+    if (!d.moved) {
+      if (fab.classList.contains("round")) toggleSheet(true); // second tap
+      else popRound();                                          // first tap
+      return;
+    }
+    fab.classList.remove("round");
+    var leftSide = (d.nx + 25) < innerWidth / 2;
+    var top = Math.min(Math.max(d.ny + 3, 56), innerHeight - 130);
+    fab.style.left = leftSide ? "0px" : "auto";
+    fab.style.right = leftSide ? "auto" : "0px";
+    fab.style.top = top + "px";
+    fab.classList.toggle("side-left", leftSide);
+    armIdle();
+    toast("Mock: nempel di tepi " + (leftSide ? "kiri" : "kanan"));
+  });
+  armIdle();
+  document.getElementById("backdrop").onclick = function () { toggleSheet(false); };
+  // tapping the web content dismisses a popped-out round button back into the edge
+  document.getElementById("web").addEventListener("pointerdown", function () {
+    if (fab.classList.contains("round")) collapseRound();
+  });
+
+  document.getElementById("tabs").addEventListener("click", function (e) {
+    var tab = e.target.closest(".tab");
+    if (e.target.id === "newtab") { toast("Mock: tab baru"); return; }
+    if (!tab) return;
+    if (e.target.classList.contains("x")) { toast("Mock: tutup tab"); return; }
+    document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("on"); });
+    tab.classList.add("on");
+    document.getElementById("urlText").textContent = tab.dataset.url;
+    document.getElementById("pageTitle").textContent = tab.dataset.title;
+    document.getElementById("web").scrollTop = 0;
+  });
+
+  document.querySelectorAll("[data-act]").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var names = { reload: "Memuat ulang…", back: "Kembali", forward: "Maju", keyboard: "Keyboard dibuka",
+        paste: "Paste dari clipboard HP", desktop: "Mode desktop: ON", zoom: "Zoom 100% → 125%",
+        find: "Cari di halaman", settings: "Pengaturan relay" };
+      toast("Mock: " + (names[el.dataset.act] || el.dataset.act));
+    });
+  });
+
+  if (new URLSearchParams(location.search).has("open")) toggleSheet(true);
+  if (new URLSearchParams(location.search).has("round")) { popRound(); clearTimeout(roundTimer); }
+  setTimeout(function () { var h = document.getElementById("hint"); if (h) h.style.opacity = "0"; }, 6000);
+</script>
+</body>
+</html>
