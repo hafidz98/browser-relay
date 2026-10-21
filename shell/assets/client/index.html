@@ -79,6 +79,9 @@
     align-items: center; justify-content: center; padding: 24px;
     pointer-events: none; text-align: center;
   }
+  /* With the sheet open the middle of the viewport is covered - keep
+     the empty state in the strip that is still visible. */
+  body.sheet-open #browserDown { align-items: flex-start; padding-top: 56px; }
   #browserDown .bd-card {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 18px; padding: 22px 24px; max-width: 340px;
@@ -150,6 +153,7 @@
        and scroll the content inside. Dragging the grip up opens the
        full-height variant. */
     max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
+
   }
   body.sheet-tall #toolsheet { max-height: 92vh; }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
@@ -209,6 +213,7 @@
   .tool svg { width: 21px; height: 21px; stroke: currentColor; }
   /* session-ending actions live in their own row, not next to Back/Forward */
   .grid.danger { grid-template-columns: 1fr; gap: 8px; margin-top: 6px; }
+  .danger-group { margin-top: 18px; }
   .danger-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
     color: var(--faint); margin: 4px 2px 2px; }
   .tool.danger { flex-direction: row; gap: 10px; justify-content: flex-start; padding-left: 14px;
@@ -438,6 +443,7 @@
        of the rail, and the rail keeps enough bottom padding that the
        row above can scroll clear of it. */
     #toolsheet { padding-bottom: 120px; }
+    #toolsheet { padding-bottom: 110px; }
     #toolsheet .danger-group {
       position: sticky; bottom: 0; background: var(--panel); z-index: 2;
       padding: 10px 0 4px; margin-top: 16px;
