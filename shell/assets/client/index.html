@@ -85,6 +85,12 @@
     border-left: 1px solid var(--border); padding-left: 7px; margin-left: 2px;
   }
   #statusLatency:empty { display: none; }
+  #takeOver {
+    display: none; margin-left: 6px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--accent); background: transparent; color: var(--accent);
+    font-size: 11px; cursor: pointer;
+  }
+  #takeOver:hover { background: var(--accent); color: var(--bg); }
   #status {
     position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5;
     background: var(--chip); color: var(--text);
@@ -649,7 +655,7 @@
 
 <img id="screen" alt="" draggable="false">
 
-<div id="status"><span id="statusText">connecting…</span><span id="statusLatency"></span></div>
+<div id="status"><span id="statusText">connecting…</span><span id="statusLatency"></span><button id="takeOver" type="button">Take over</button></div>
 <div id="pausedBar" style="display:none">
   <span>Chrome is in the background - the screen is frozen</span>
   <button id="wakeChrome">Bring it to the front</button>

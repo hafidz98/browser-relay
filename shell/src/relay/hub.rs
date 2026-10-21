@@ -699,6 +699,16 @@ impl Hub {
                 }
                 _ => self.send_err(id, "bad clipboard action"),
             },
+            "takeover" => {
+                // Another device wants to drive: hand the wheel over.
+                {
+                    let mut st = self.state.lock().unwrap();
+                    st.driver = Some(id);
+                }
+                rlog!("client #{id} took over the driver role");
+                self.broadcast_roles();
+            }
+
             "emulation" => {
                 let w = m.width.unwrap_or(390) as u32;
                 let h = m.height.unwrap_or(844) as u32;

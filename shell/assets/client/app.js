@@ -405,6 +405,31 @@ var qrScanned = false;
     }
   }
 
+  // Tell the PC which device we are and how big our view is, so the
+  // page is rendered for us and not for whoever drove it before.
+  function sendMyEmulation() {
+    var isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+      (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 768);
+    var vp = viewBox();
+    send({
+      type: "emulation",
+      mobile: isMobileDevice,
+      width: Math.round(vp.w),
+      height: Math.round(vp.h)
+    });
+  }
+  // Another device is driving: offer to take the wheel.
+  function setTakeOver(show) {
+    var b = document.getElementById("takeOver");
+    if (b) b.style.display = show ? "inline-block" : "none";
+  }
+  var takeOverBtn = document.getElementById("takeOver");
+  if (takeOverBtn) {
+    takeOverBtn.onclick = function () {
+      send({ type: "takeover" });
+      toast("Taking over the remote view");
+    };
+  }
   function connect() {
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws");
@@ -456,11 +481,7 @@ var qrScanned = false;
           // stale setting from a previous client.
           if (!window.__autoMobileDone) {
             window.__autoMobileDone = true;
-            var isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-              (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 768);
-            // The PC renders the page at this size, so send the real one.
-            var vp = viewBox();
-            send({ type: "emulation", mobile: isMobileDevice, width: Math.round(vp.w), height: Math.round(vp.h) });
+            sendMyEmulation();
           }
           break;
         case "paused":
@@ -479,7 +500,13 @@ var qrScanned = false;
         case "role":
           isDriver = !!m.driver;
           setStatus(isDriver ? "Driving Chrome" : "View only", isDriver ? "live" : "view");
-          if (isDriver) sendViewport();
+          setTakeOver(!isDriver);
+          if (isDriver) {
+            // The new driver has to say how it wants the page: its own
+            // device mode and its own size.
+            sendMyEmulation();
+            sendViewport(true);
+          }
           break;
         case "frame":
           img.src = "data:image/jpeg;base64," + m.data;
