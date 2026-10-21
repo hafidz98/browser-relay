@@ -67,6 +67,10 @@ struct BState {
     /// The size of the screencast frame we send, in CSS pixels (DIP).
     frame_w: f64,
     frame_h: f64,
+    /// The viewport the client asked for (width, height, dpr). Kept so
+    /// it can be re-applied when a tab is attached: a new tab starts
+    /// with the plain window size again.
+    viewport: Option<(u32, u32, f64)>,
     orig_ua: String,
     last_tabs: Vec<PageTarget>,
 }
@@ -107,6 +111,7 @@ impl Browser {
                 page_h: 0.0,
                 frame_w: 0.0,
                 frame_h: 0.0,
+                viewport: None,
                 orig_ua: String::new(),
                 last_tabs: Vec::new(),
             }),
@@ -323,6 +328,12 @@ impl Browser {
         }
         // The page may already be laid out: read its real size.
         self.read_page_size(&cdp).await;
+        // A new tab starts with the plain window size: put the client's
+        // viewport back.
+        let wanted = self.state.lock().unwrap().viewport;
+        if let Some((w, h, dpr)) = wanted {
+            let _ = self.set_viewport(w, h, dpr).await;
+        }
         // Chrome without the anti-backgrounding flags stops painting
         // when another window covers it: the screen would freeze.
         let flags = crate::chrome::chrome_has_relay_flags();
@@ -799,7 +810,11 @@ impl Browser {
         // The mouse mapping divides the frame pixels by this, so it has
         // to match what we actually render with - otherwise every click
         // lands twice as far from where it was aimed.
-        self.state.lock().unwrap().dsf = dsf;
+        {
+            let mut st = self.state.lock().unwrap();
+            st.dsf = dsf;
+            st.viewport = Some((w, h, dpr));
+        }
         cdp.call(
             "Emulation.setDeviceMetricsOverride",
             json!({"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": false}),

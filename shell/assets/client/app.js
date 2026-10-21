@@ -623,10 +623,23 @@ var qrScanned = false;
       h: Math.max(1, window.innerHeight)
     };
   }
+  var viewportAsks = 0;
   function fitFrame() {
     var nw = img.naturalWidth, nh = img.naturalHeight;
     if (!nw || !nh) return;
     var b = viewBox();
+    // The PC should render the page at the size of this view. If the
+    // frame is a different size, the emulation was reset (a new tab,
+    // a navigation): ask for it again.
+    var dpr = window.devicePixelRatio || 1;
+    if (Math.abs(nw - b.w * dpr) > 2) {
+      if (viewportAsks < 6) {
+        viewportAsks++;
+        setTimeout(function () { sendViewport(true); }, 300);
+      }
+    } else {
+      viewportAsks = 0;
+    }
     var z = zoomLevels[zoomIdx] / 100;
     var w = b.w * z;
     var h = w * nh / nw;
@@ -638,12 +651,12 @@ var qrScanned = false;
   img.addEventListener("load", fitFrame);
 
   var lastViewport = "";
-  function sendViewport() {
+  function sendViewport(force) {
     if (!ws || ws.readyState !== 1 || !authed || !isDriver) return;
     var b = viewBox();
     var dpr = window.devicePixelRatio || 1;
     var key = Math.round(b.w) + "x" + Math.round(b.h) + "@" + dpr;
-    if (key === lastViewport) return;
+    if (key === lastViewport && !force) return;
     lastViewport = key;
     ws.send(JSON.stringify({
       type: "viewport", width: Math.round(b.w), height: Math.round(b.h), dpr: dpr

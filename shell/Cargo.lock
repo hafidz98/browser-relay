@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "browser-relay-shell"
-version = "0.9.50"
+version = "0.9.51"
 dependencies = [
  "arboard",
  "eframe",
