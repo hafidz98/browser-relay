@@ -16,17 +16,28 @@ import java.util.List;
  * shell/assets/client/app.js message for message:
  * <ul>
  *   <li>client -&gt; relay: auth, ping, mouse, wheel, key, tab,
- *       emulation, clipboard</li>
- *   <li>relay -&gt; client: welcome, status, pong, role, frame,
+ *       emulation, viewport, clipboard, takeover</li>
+ *   <li>relay -&gt; client: welcome, status, paused, pong, role, frame,
  *       tabs, clipboard, emulation, error</li>
  * </ul>
  * Input sends are gated on authed &amp;&amp; driver, like the web
  * client's send() — one driver at a time, viewers are read-only.
+ * "takeover" is the one exception: the server lets a viewer take the
+ * wheel, so it bypasses that gate.
+ *
+ * <p>This class owns the connection. It keeps exactly one socket
+ * alive, ignores every callback that comes from a socket it already
+ * replaced (connection generations) and is the only place that
+ * reconnects.
  */
 public class RelayClient {
     private static final String TAG = "RelayClient";
     private static final long PING_MS = 2000;
     private static final int MAX_BACKOFF_MS = 10000;
+    /** No message from the PC for this long means the link is gone. */
+    private static final long DEAD_AFTER_MS = 10000;
+    /** Read timeout of an authenticated socket (the PC pings back). */
+    private static final int READ_TIMEOUT_MS = 20000;
 
     public static class TabInfo {
         public String id;
@@ -38,6 +49,10 @@ public class RelayClient {
     public interface Listener {
         void onWelcome(boolean driver, boolean browserUp, boolean mobile);
         void onStatus(boolean browserUp);
+        /** The page is in the background: the picture is frozen. */
+        void onPaused(boolean paused);
+        /** Chrome runs without the flags that keep it painting. */
+        void onFlagsOk(boolean flagsOk);
         void onLatency(long ms);
         void onRole(boolean driver);
         void onFrame(byte[] jpeg);
@@ -47,6 +62,10 @@ public class RelayClient {
         void onFind(int count);
         void onChrome(String action);
         void onAuthError(String msg);
+        /** An error the relay sent after we were authenticated. */
+        void onServerError(String msg);
+        /** The pairing code was refused: drop it, use the fingerprint. */
+        void onBadToken();
         void onDisconnected();
         void onConnError(String msg);
         void onPairWait();
@@ -55,29 +74,60 @@ public class RelayClient {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Listener listener;
     private WsClient ws;
-    private String wsUrl;
-    private String token;
+    /** Connection generation: callbacks of a replaced socket are ignored. */
+    private int gen = 0;
+    private String wsUrl = "";
+    /** The pairing code, sent with the first auth only. */
+    private String token = "";
+    /** The pairing code we already spent on an auth attempt. */
+    private String usedToken = "";
     private String fingerprint = "";
     private String deviceName = "";
     private boolean authed;
     private boolean driver;
     private boolean wantConnect;
     private int backoffMs = 2000;
+    /** When the last message from the PC arrived (watchdog). */
+    private long lastRxAt = 0;
+    /** The view size in CSS pixels, used by viewport/emulation. */
+    private int viewW = 0;
+    private int viewH = 0;
+    private float viewDpr = 1f;
+    private float viewZoom = 1f;
+    /** The page layout this client wants: phone (true) or desktop. */
+    private boolean emulMobile = true;
+    /** The layout the PC was told last (so we do not send it twice). */
+    private int sentW = -1;
+    private int sentH = -1;
+    private float sentDpr = -1f;
+    private float sentZoom = -1f;
+    private boolean sentMobile = false;
 
     private final Runnable pingTask = new Runnable() {
         @Override
         public void run() {
-            if (wantConnect && authed && ws != null) {
-                try {
-                    ws.send(new JSONObject()
-                            .put("type", "ping")
-                            .put("t", System.currentTimeMillis())
-                            .toString());
-                } catch (Exception e) {
-                    Log.w(TAG, "ping: " + e);
-                }
-                main.postDelayed(this, PING_MS);
+            if (!wantConnect || !authed || ws == null) return;
+            long now = System.currentTimeMillis();
+            // A dropped Wi-Fi link leaves the socket open but silent.
+            // The PC answers every ping, so silence means the peer is
+            // gone: drop the socket and let the reconnect take over.
+            if (lastRxAt > 0 && now - lastRxAt > DEAD_AFTER_MS) {
+                Log.w(TAG, "no answer from the PC, reconnecting");
+                listener.onConnError("timeout");
+                WsClient dead = ws;
+                ws = null;
+                if (dead != null) dead.close();
+                return;
             }
+            try {
+                ws.send(new JSONObject()
+                        .put("type", "ping")
+                        .put("t", now)
+                        .toString());
+            } catch (Exception e) {
+                Log.w(TAG, "ping: " + e);
+            }
+            main.postDelayed(this, PING_MS);
         }
     };
 
@@ -92,10 +142,18 @@ public class RelayClient {
         this.listener = listener;
     }
 
+    /**
+     * Start (or restart) the connection.
+     *
+     * @param token the single-use pairing code, or "" when the device
+     *              is already paired. It is sent with the first auth
+     *              only — afterwards the fingerprint alone is the
+     *              credential, exactly like the web client.
+     */
     public void connect(String wsUrl, String token, String fingerprint, String name) {
         disconnect();
         this.wsUrl = wsUrl;
-        this.token = token;
+        this.token = token == null ? "" : token.trim();
         this.fingerprint = fingerprint;
         this.deviceName = name;
         wantConnect = true;
@@ -103,23 +161,49 @@ public class RelayClient {
         doConnect();
     }
 
+    /** Connect right now, without waiting for the backoff timer. */
+    public void reconnectNow() {
+        if (wsUrl.isEmpty()) return;
+        wantConnect = true;
+        backoffMs = 2000;
+        main.removeCallbacks(reconnectTask);
+        doConnect();
+    }
+
     private void doConnect() {
+        final int g = ++gen;
+        // A new connection: the PC must be told our layout again.
+        sentW = -1;
+        // The socket we replace is closed right away: two live sockets
+        // for one phone would fight over the driver role.
+        WsClient old = ws;
+        ws = null;
+        if (old != null) old.close();
         authed = false;
         driver = false;
-        ws = new WsClient();
-        ws.connect(wsUrl, new WsClient.Listener() {
+        main.removeCallbacks(pingTask);
+        final WsClient client = new WsClient();
+        ws = client;
+        client.connect(wsUrl, new WsClient.Listener() {
             @Override
             public void onOpen() {
+                if (g != gen) return; // a newer socket took over
                 backoffMs = 2000;
+                lastRxAt = System.currentTimeMillis();
                 try {
                     JSONObject auth = new JSONObject()
                             .put("type", "auth")
-                            .put("fingerprint", fingerprint);
-                    // Single-use QR/pair code takes precedence when present.
-                    if (token != null && !token.isEmpty()) {
-                        auth.put("token", token).put("name", deviceName);
+                            .put("fingerprint", fingerprint)
+                            .put("name", deviceName);
+                    // The pairing code is single use: it goes out with the
+                    // FIRST auth only. Every later connect uses the
+                    // fingerprint alone, so a spent code is never sent
+                    // twice (the server would answer "bad token").
+                    if (!token.isEmpty() && !token.equals(usedToken)) {
+                        auth.put("token", token);
+                        usedToken = token;
                     }
-                    ws.send(auth.toString());
+                    client.send(auth.toString());
                 } catch (Exception e) {
                     Log.w(TAG, "auth send: " + e);
                 }
@@ -127,13 +211,17 @@ public class RelayClient {
 
             @Override
             public void onMessage(String text) {
+                if (g != gen) return; // a newer socket took over
+                lastRxAt = System.currentTimeMillis();
                 handle(text);
             }
 
             @Override
             public void onClose() {
+                if (g != gen) return; // a newer socket took over
                 authed = false;
                 main.removeCallbacks(pingTask);
+                if (ws == client) ws = null;
                 listener.onDisconnected();
                 if (wantConnect) {
                     main.postDelayed(reconnectTask, backoffMs);
@@ -143,6 +231,7 @@ public class RelayClient {
 
             @Override
             public void onError(String msg) {
+                if (g != gen) return; // a newer socket took over
                 Log.w(TAG, "ws: " + msg);
                 listener.onConnError(msg);
             }
@@ -151,6 +240,7 @@ public class RelayClient {
 
     /** Ask the relay for a single-use pairing code (shown on the PC panel). */
     public void requestPairing() {
+        if (ws == null) return;
         try {
             ws.send(new JSONObject()
                     .put("type", "pair_request")
@@ -164,15 +254,17 @@ public class RelayClient {
 
     /** Pair with a code read off the PC panel. */
     public void pairWithCode(String code) {
-        this.token = code;
+        if (ws == null || code == null || code.isEmpty()) return;
+        token = code.trim();
         // Re-auth on the live socket without a full reconnect.
         try {
             ws.send(new JSONObject()
                     .put("type", "auth")
-                    .put("token", code)
+                    .put("token", token)
                     .put("fingerprint", fingerprint)
                     .put("name", deviceName)
                     .toString());
+            usedToken = token;
         } catch (Exception e) {
             Log.w(TAG, "pair auth send: " + e);
         }
@@ -180,11 +272,13 @@ public class RelayClient {
 
     public void disconnect() {
         wantConnect = false;
+        gen++; // ignore every callback of the socket we drop
         main.removeCallbacks(pingTask);
         main.removeCallbacks(reconnectTask);
-        if (ws != null) {
-            ws.close();
-            ws = null;
+        WsClient old = ws;
+        ws = null;
+        if (old != null) {
+            old.close();
         }
         authed = false;
         driver = false;
@@ -192,6 +286,11 @@ public class RelayClient {
 
     public boolean isDriver() {
         return authed && driver;
+    }
+
+    /** True when the client is connected but only watching. */
+    public boolean isViewOnly() {
+        return authed && !driver;
     }
 
     private void handle(String text) {
@@ -211,11 +310,24 @@ public class RelayClient {
                 driver = m.optBoolean("driver", false);
                 main.removeCallbacks(pingTask);
                 main.postDelayed(pingTask, PING_MS);
+                // An authenticated socket must not stay silent forever:
+                // the PC answers our pings, so a read timeout is safe.
+                if (ws != null) ws.setReadTimeoutMs(READ_TIMEOUT_MS);
                 listener.onWelcome(driver, m.optBoolean("browserUp", true),
                         m.optBoolean("mobile", false));
+                if (m.has("paused")) listener.onPaused(m.optBoolean("paused", false));
+                if (m.has("flagsOk")) listener.onFlagsOk(m.optBoolean("flagsOk", true));
+                // The page must be rendered for THIS device: tell the PC
+                // our size and our layout every time we get the wheel.
+                pushLayout();
                 break;
             case "status":
                 listener.onStatus(m.optBoolean("browserUp", true));
+                if (m.has("paused")) listener.onPaused(m.optBoolean("paused", false));
+                if (m.has("flagsOk")) listener.onFlagsOk(m.optBoolean("flagsOk", true));
+                break;
+            case "paused":
+                listener.onPaused(m.optBoolean("paused", false));
                 break;
             case "pong":
                 listener.onLatency(System.currentTimeMillis() - m.optLong("t", 0));
@@ -223,6 +335,11 @@ public class RelayClient {
             case "role":
                 driver = m.optBoolean("driver", false);
                 listener.onRole(driver);
+                // We are driving now: the PC has to render the page for
+                // this device, not for whoever drove before. Forget what
+                // was sent last, so it is sent again.
+                sentW = -1;
+                pushLayout();
                 break;
             case "frame": {
                 String data = m.optString("data", "");
@@ -257,7 +374,9 @@ public class RelayClient {
                 if (m.has("text")) listener.onClipboard(m.optString("text", ""));
                 break;
             case "emulation":
-                listener.onEmulation(m.optBoolean("mobile", false));
+                emulMobile = m.optBoolean("mobile", false);
+                sentMobile = emulMobile;
+                listener.onEmulation(emulMobile);
                 break;
             case "find":
                 listener.onFind(m.optInt("count", 0));
@@ -265,17 +384,49 @@ public class RelayClient {
             case "chrome":
                 listener.onChrome(m.optString("action", ""));
                 break;
-            case "error":
-                String msg = m.optString("message", "error");
+            case "error": {
+                String msg = m.optString("message", "");
+                if (msg.isEmpty()) msg = m.optString("error", "error");
                 if (!authed) {
-                    listener.onAuthError(msg);
+                    if (isBadToken(msg)) {
+                        // The pairing code is single use: it may already
+                        // be spent. Drop it and retry with the fingerprint
+                        // alone - the device may well be paired already.
+                        Log.i(TAG, "pairing code refused, retrying with the fingerprint");
+                        token = "";
+                        usedToken = "";
+                        listener.onBadToken();
+                        reconnectNow();
+                    } else {
+                        if (msg.contains("unknown device")) {
+                            // Not paired: retrying would only nag the PC.
+                            // The pairing card asks for a code instead.
+                            wantConnect = false;
+                        }
+                        listener.onAuthError(msg);
+                    }
                 } else {
-                    Log.w(TAG, "relay error: " + msg);
+                    // Authenticated, so this is about what we asked for
+                    // (for example "view-only: another client is driving").
+                    // "browser unavailable" is the PC's state, not our
+                    // mistake: the overlay already says Chrome is down.
+                    if (!"browser unavailable".equals(msg)) {
+                        listener.onServerError(msg);
+                    }
                 }
                 break;
+            }
             default:
                 break;
         }
+    }
+
+    /** The relay's answer to a refused pairing code. */
+    private static boolean isBadToken(String msg) {
+        String m = msg == null ? "" : msg.toLowerCase();
+        return m.contains("bad token") || m.contains("invalid token")
+                || m.contains("bad code") || m.contains("invalid code")
+                || m.contains("expired code");
     }
 
     private void send(JSONObject o) {
@@ -286,19 +437,28 @@ public class RelayClient {
 
     // ---- client -> relay ----
 
-    public void sendMouse(String action, double x, double y, String button) {
+    /**
+     * @param iw image width in pixels of the picture we show (the
+     *           decoded frame), so the server can map the click onto
+     *           the page exactly.
+     */
+    public void sendMouse(String action, double x, double y, String button,
+                          int iw, int ih) {
         try {
             send(new JSONObject().put("type", "mouse").put("action", action)
-                    .put("x", x).put("y", y).put("button", button));
+                    .put("x", x).put("y", y).put("button", button)
+                    .put("iw", iw).put("ih", ih));
         } catch (Exception e) {
             Log.w(TAG, "mouse: " + e);
         }
     }
 
-    public void sendWheel(double x, double y, double dx, double dy) {
+    public void sendWheel(double x, double y, double dx, double dy,
+                           int iw, int ih) {
         try {
             send(new JSONObject().put("type", "wheel")
-                    .put("x", x).put("y", y).put("dx", dx).put("dy", dy));
+                    .put("x", x).put("y", y).put("dx", dx).put("dy", dy)
+                    .put("iw", iw).put("ih", ih));
         } catch (Exception e) {
             Log.w(TAG, "wheel: " + e);
         }
@@ -349,20 +509,94 @@ public class RelayClient {
         }
     }
 
-    public void sendEmulation(boolean mobile) {
-        sendEmulation(mobile, 390, 844);
+    /** Ask for the driver role. The server accepts this from any client. */
+    public void sendTakeover() {
+        if (!authed || ws == null) return;
+        try {
+            // Not send(): the driver gate would swallow it.
+            ws.send(new JSONObject().put("type", "takeover").toString());
+        } catch (Exception e) {
+            Log.w(TAG, "takeover: " + e);
+        }
     }
 
-    public void sendEmulation(boolean mobile, int width, int height) {
+    /**
+     * The size of our view in CSS pixels (plus the device pixel ratio
+     * and our own zoom). The PC renders the page at that size, so the
+     * picture arrives 1:1.
+     */
+    public void setViewSize(int cssWidth, int cssHeight, float dpr, float zoom) {
+        boolean changed = viewW != cssWidth || viewH != cssHeight
+                || viewDpr != dpr || viewZoom != zoom;
+        viewW = cssWidth;
+        viewH = cssHeight;
+        viewDpr = dpr;
+        viewZoom = zoom;
+        if (changed) pushLayout();
+    }
+
+    /** Send the current view size to the PC. */
+    public void sendViewport() {
+        if (!authed || !driver || ws == null) return;
+        if (viewW <= 0 || viewH <= 0) return;
         try {
-            send(new JSONObject()
+            ws.send(new JSONObject()
+                    .put("type", "viewport")
+                    .put("width", viewW)
+                    .put("height", viewH)
+                    .put("dpr", viewDpr)
+                    .put("z", viewZoom)
+                    .toString());
+        } catch (Exception e) {
+            Log.w(TAG, "viewport: " + e);
+        }
+    }
+
+    /** Request the page layout this client wants, at our real size. */
+    public void sendEmulation(boolean mobile) {
+        emulMobile = mobile;
+        pushLayout();
+    }
+
+    private void sendEmulationNow() {
+        if (!authed || !driver || ws == null) return;
+        int w = viewW > 0 ? viewW : 390;
+        int h = viewH > 0 ? viewH : 844;
+        try {
+            ws.send(new JSONObject()
                     .put("type", "emulation")
-                    .put("mobile", mobile)
-                    .put("width", width)
-                    .put("height", height));
+                    .put("mobile", emulMobile)
+                    .put("width", w)
+                    .put("height", h)
+                    .toString());
         } catch (Exception e) {
             Log.w(TAG, "emulation: " + e);
         }
+    }
+
+    /**
+     * Tell the PC both how big our view is and which layout we want.
+     * Sent whenever we get the wheel, so a reconnect after the laptop
+     * left does not keep the laptop's layout.
+     *
+     * <p>The same message twice in a row is skipped: the PC only needs
+     * to hear it when something actually changed (a new size, a new
+     * layout, or a new driver).
+     */
+    private void pushLayout() {
+        if (!authed || !driver) return;
+        if (viewW <= 0 || viewH <= 0) return; // our size is not known yet
+        boolean same = sentW == viewW && sentH == viewH
+                && sentDpr == viewDpr && sentZoom == viewZoom
+                && sentMobile == emulMobile;
+        if (same) return;
+        sendEmulationNow();
+        sendViewport();
+        sentW = viewW;
+        sentH = viewH;
+        sentDpr = viewDpr;
+        sentZoom = viewZoom;
+        sentMobile = emulMobile;
     }
 
     public void sendClipboardGet() {

@@ -75,7 +75,7 @@ public class ConnectActivity extends Activity {
         String host = cleanHost();
         String code = tokenInput.getText().toString().trim();
         if (host.isEmpty()) {
-            Toast.makeText(this, "Isi server dulu (host:port)",
+            Toast.makeText(this, "Fill in the server address first (host:port)",
                     Toast.LENGTH_SHORT).show();
             return;
         }
@@ -110,12 +110,12 @@ public class ConnectActivity extends Activity {
     private void onRequestCode() {
         String host = cleanHost();
         if (host.isEmpty()) {
-            Toast.makeText(this, "Isi server dulu (host:port)",
+            Toast.makeText(this, "Fill in the server address first (host:port)",
                     Toast.LENGTH_SHORT).show();
             return;
         }
         requestBtn.setEnabled(false);
-        requestBtn.setText("Meminta…");
+        requestBtn.setText("Requesting…");
         closePairWs();
         pairWs = new WsClient();
         String wsUrl = "ws://" + host + "/ws";
@@ -131,7 +131,7 @@ public class ConnectActivity extends Activity {
                             .put("name", name)
                             .toString());
                 } catch (Exception e) {
-                    onPairError("gagal kirim request");
+                    onPairError("could not send the request");
                 }
             }
 

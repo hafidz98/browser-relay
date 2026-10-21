@@ -12,9 +12,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.security.MessageDigest;
-import java.util.Random;
+import java.security.SecureRandom;
 
 /**
  * Minimal RFC 6455 WebSocket client: text frames only, ws:// only.
@@ -35,11 +36,30 @@ public class WsClient {
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Random random = new Random();
+    /** Cryptographic randomness for the handshake and the frame masks. */
+    private final SecureRandom random = new SecureRandom();
     private volatile Socket socket;
     private volatile OutputStream out;
     private volatile boolean closed;
     private volatile boolean closeNotified;
+    /** Read timeout in ms; 0 means "wait forever". */
+    private volatile int readTimeoutMs = 0;
+
+    /**
+     * Set the read timeout of the socket. A peer that stops answering
+     * (dropped Wi-Fi) then closes the socket instead of freezing the
+     * picture forever. 0 disables it.
+     */
+    public void setReadTimeoutMs(int ms) {
+        readTimeoutMs = ms;
+        Socket s = socket;
+        if (s == null || ms <= 0) return;
+        try {
+            s.setSoTimeout(ms);
+        } catch (Exception e) {
+            Log.w(TAG, "setSoTimeout: " + e);
+        }
+    }
 
     public void connect(String wsUrl, Listener listener) {
         closed = false;
@@ -67,10 +87,23 @@ public class WsClient {
 
             Socket s = new Socket();
             s.connect(new InetSocketAddress(host, port), 8000);
+            if (readTimeoutMs > 0) {
+                try {
+                    s.setSoTimeout(readTimeoutMs);
+                } catch (Exception e) {
+                    Log.w(TAG, "setSoTimeout: " + e);
+                }
+            }
             socket = s;
             InputStream in = s.getInputStream();
             out = s.getOutputStream();
 
+            // The handshake must not hang forever either.
+            try {
+                s.setSoTimeout(10000);
+            } catch (Exception e) {
+                Log.w(TAG, "setSoTimeout: " + e);
+            }
             byte[] keyBytes = new byte[16];
             random.nextBytes(keyBytes);
             String key = Base64.encodeToString(keyBytes, Base64.NO_WRAP);
@@ -96,11 +129,24 @@ public class WsClient {
                 throw new IOException("bad Sec-WebSocket-Accept");
             }
 
+            // From here on the read timeout is the one the client asked
+            // for (0 = wait forever until the peer says something).
+            try {
+                s.setSoTimeout(readTimeoutMs > 0 ? readTimeoutMs : 0);
+            } catch (Exception e) {
+                Log.w(TAG, "setSoTimeout: " + e);
+            }
             post(listener::onOpen);
             readLoop(in, listener);
         } catch (Exception e) {
             if (!closed) {
-                final String msg = e.toString();
+                final String msg;
+                if (e instanceof SocketTimeoutException) {
+                    // The peer stopped answering (dropped Wi-Fi, PC gone).
+                    msg = "read timeout: the PC stopped answering";
+                } else {
+                    msg = e.toString();
+                }
                 post(() -> listener.onError(msg));
             }
         } finally {
@@ -296,11 +342,15 @@ public class WsClient {
     }
 
     public void close() {
-        closed = true;
+        if (closed) return;
+        // Send the close frame BEFORE tearing the socket down: the peer
+        // should see a clean close, not a TCP reset. The flag is set
+        // afterwards, because sendFrame() refuses to write once closed.
         try {
             sendFrame(0x8, new byte[0]);
         } catch (Exception ignored) {
         }
+        closed = true;
         closeSocket();
     }
 }

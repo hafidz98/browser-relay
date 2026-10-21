@@ -84,6 +84,8 @@ public class MainActivity extends Activity
     private TextView urlText;
     private ImageButton reloadBtn;
     private EditText kbd;
+    private View takeoverBtn;
+    private TextView statusBanner;
 
     private RelayClient relay;
     private SharedPreferences prefs;
@@ -110,6 +112,14 @@ public class MainActivity extends Activity
     private boolean browserUp = true;
     private boolean mobile;
     private boolean firstWelcome = true;
+    /** The page is in the background: the picture is frozen. */
+    private boolean paused = false;
+    /** Chrome runs without the flags that keep it painting. */
+    private boolean flagsOk = true;
+    /** The last thing the relay complained about (shown in the banner). */
+    private String serverNote = "";
+    /** True while the relay is reconnecting on its own. */
+    private boolean reconnecting = false;
 
     // ---- frame decode (latest-only, off the main thread) ----
     private final ExecutorService frameWorker = Executors.newSingleThreadExecutor();
@@ -215,9 +225,22 @@ public class MainActivity extends Activity
         urlText = findViewById(R.id.urlText);
         reloadBtn = findViewById(R.id.reloadBtn);
         kbd = findViewById(R.id.kbd);
+        takeoverBtn = findViewById(R.id.takeoverBtn);
+        statusBanner = findViewById(R.id.statusBanner);
 
         frameView.setInputSink(this);
         relay = new RelayClient(this);
+        // View-only clients can ask for the wheel.
+        takeoverBtn.setOnClickListener(v -> {
+            relay.sendTakeover();
+            Toast.makeText(this, "Taking over the remote view",
+                    Toast.LENGTH_SHORT).show();
+        });
+        // The PC renders the page for the size we show: tell it when
+        // that size changes.
+        frameView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) updateViewSize();
+        });
 
         buildToolGrid();
         setupHandle();
@@ -242,14 +265,17 @@ public class MainActivity extends Activity
     protected void onResume() {
         super.onResume();
         connect();
+        // The PC has to know how big our view is; the layout listener
+        // covers later changes.
+        updateViewSize();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        cancelReconnect();
         relay.disconnect();
         authed = false;
+        reconnecting = false;
         handler.removeCallbacks(idleRunnable);
         handler.removeCallbacks(roundRunnable);
     }
@@ -295,6 +321,8 @@ public class MainActivity extends Activity
             updatePairingCard(); updateGateIndicator();
             return;
         }
+        // The pairing code is single use: the relay burns it. It is sent
+        // with the first auth only, so a spent code is never sent twice.
         String token = prefs.getString("br_token", "");
         String fp = getFingerprint();
         Log.i(TAG, "connecting to ws://" + hostPort + "/ws");
@@ -329,15 +357,24 @@ public class MainActivity extends Activity
     @Override
     public void onWelcome(boolean driver, boolean browserUp, boolean mobile) {
         authed = true;
-        cancelReconnect(); // Stop auto-reconnect on success.
+        reconnecting = false;
         this.browserUp = browserUp;
         this.mobile = mobile;
+        // The pairing code is burned by the relay: forget it, so the next
+        // connect authenticates with the fingerprint alone.
+        prefs.edit().remove("br_token").apply();
+        serverNote = "";
+        lastServerNote = "";
         updateBrowserDown();
         updatePairingCard(); updateGateIndicator();
         updateDesktopTool();
+        updateTakeover();
+        updateStatusBanner();
         Log.i(TAG, "welcome driver=" + driver + " browserUp=" + browserUp);
-        Toast.makeText(this, driver ? "Kamu mengendalikan" : "Mode lihat saja",
+        Toast.makeText(this, driver ? "You are driving" : "View only",
                 Toast.LENGTH_SHORT).show();
+        // The PC renders the page for whoever drives: tell it our size.
+        updateViewSize();
         if (firstWelcome) {
             firstWelcome = false;
             hint.setVisibility(View.VISIBLE);
@@ -345,9 +382,6 @@ public class MainActivity extends Activity
             hint.setOnClickListener(v -> hint.setVisibility(View.GONE));
             handler.postDelayed(() -> hint.animate().alpha(0f).setDuration(400)
                     .withEndAction(() -> hint.setVisibility(View.GONE)), 6000);
-            // This client is always a phone: request mobile emulation so the
-            // viewport matches, and our setting doesn't leak from a desktop.
-            relay.sendEmulation(true, 390, 844);
         }
     }
 
@@ -355,6 +389,121 @@ public class MainActivity extends Activity
     public void onStatus(boolean browserUp) {
         this.browserUp = browserUp;
         updateBrowserDown();
+        updateStatusBanner();
+    }
+
+    @Override
+    public void onPaused(boolean paused) {
+        this.paused = paused;
+        updateStatusBanner();
+        updatePairingCard();
+    }
+
+    @Override
+    public void onFlagsOk(boolean flagsOk) {
+        this.flagsOk = flagsOk;
+        updateStatusBanner();
+        updatePairingCard();
+    }
+
+    private long lastServerNoteAt = 0;
+    private String lastServerNote = "";
+
+    @Override
+    public void onServerError(String msg) {
+        // The relay refused something we asked for (for example
+        // "view-only: another client is driving"). Say it out loud
+        // instead of dropping it into the log. The same message can
+        // arrive over and over, so only say it once in a while.
+        this.serverNote = friendlyServerError(msg);
+        updateStatusBanner();
+        long now = System.currentTimeMillis();
+        if (!this.serverNote.equals(lastServerNote)
+                || now - lastServerNoteAt > 15000) {
+            lastServerNote = this.serverNote;
+            lastServerNoteAt = now;
+            Toast.makeText(this, this.serverNote, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onBadToken() {
+        // The pairing code was spent or wrong. The relay retries with
+        // the fingerprint alone (this device may already be paired).
+        prefs.edit().remove("br_token").apply();
+        reconnecting = true;
+        updatePairingCard(); updateGateIndicator();
+        Toast.makeText(this, "That pairing code was already used — "
+                + "reconnecting with this device", Toast.LENGTH_LONG).show();
+    }
+
+    /** What the relay told us about the page, in one line. */
+    private String statusNote() {
+        if (!flagsOk) {
+            return " — Chrome runs without the flags that keep it painting";
+        }
+        if (paused) {
+            return " — the page is in the background";
+        }
+        return "";
+    }
+
+    /** The status strip: what the relay told us about the page. */
+    private void updateStatusBanner() {
+        if (statusBanner == null) return;
+        String msg = "";
+        if (!flagsOk) {
+            msg = "Chrome runs without the flags that keep it painting — "
+                    + "the screen may freeze.";
+        } else if (paused) {
+            msg = "The page is in the background — the picture is frozen.";
+        }
+        if (!serverNote.isEmpty()) {
+            msg = msg.isEmpty() ? serverNote : msg + "  " + serverNote;
+        }
+        statusBanner.setText(msg);
+        statusBanner.setVisibility(msg.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /** The take-over button only makes sense while we are watching. */
+    private void updateTakeover() {
+        if (takeoverBtn == null) return;
+        boolean show = authed && !relay.isDriver();
+        takeoverBtn.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    /** A relay message the user can do something about. */
+    static String friendlyServerError(String msg) {
+        if (msg == null || msg.isEmpty()) return "The relay refused the request";
+        String m = msg.toLowerCase();
+        if (m.contains("view-only")) {
+            return "Another device is driving — tap Take over to switch";
+        }
+        if (m.contains("browser unavailable")) {
+            return "Chrome is not running on the PC";
+        }
+        if (m.contains("mouse failed") || m.contains("wheel failed")
+                || m.contains("key failed")) {
+            return "The PC did not accept that input";
+        }
+        return msg;
+    }
+
+    /**
+     * Tell the PC how big our view is, so the picture arrives 1:1.
+     * The size is in CSS pixels (dp on Android) and the zoom of our own
+     * picture is not implemented yet, so z is 1.
+     */
+    private void updateViewSize() {
+        if (relay == null || frameView == null) return;
+        int w = frameView.getWidth();
+        int h = frameView.getHeight();
+        if (w <= 0 || h <= 0) return;
+        float density = getResources().getDisplayMetrics().density;
+        if (density <= 0) density = 1f;
+        int cssW = Math.max(1, Math.round(w / density));
+        int cssH = Math.max(1, Math.round(h / density));
+        relay.setViewSize(cssW, cssH, density, 1f);
     }
 
     @Override
@@ -366,7 +515,8 @@ public class MainActivity extends Activity
 
     @Override
     public void onRole(boolean driver) {
-        Toast.makeText(this, driver ? "Kamu mengendalikan" : "Mode lihat saja",
+        updateTakeover();
+        Toast.makeText(this, driver ? "You are driving" : "View only",
                 Toast.LENGTH_SHORT).show();
     }
 
@@ -429,7 +579,7 @@ public class MainActivity extends Activity
     @Override
     public void onFind(int count) {
         runOnUiThread(() -> Toast.makeText(this,
-                count + " hasil", Toast.LENGTH_SHORT).show());
+                count + (count == 1 ? " match" : " matches"), Toast.LENGTH_SHORT).show());
     }
 
     @Override
@@ -441,7 +591,7 @@ public class MainActivity extends Activity
     @Override
     public void onAuthError(String msg) {
         if ("unknown device".equals(msg)) {
-            // Not paired yet — show the pairing card on beranda.
+            // Not paired yet — show the pairing card on the home screen.
             runOnUiThread(() -> {
                 Toast.makeText(this, "Not paired yet — request a code from the PC panel",
                         Toast.LENGTH_LONG).show();
@@ -450,10 +600,15 @@ public class MainActivity extends Activity
             });
             return;
         }
+        if (msg != null && msg.contains("revoked")) {
+            // The PC forgot this device: the pairing code is worthless.
+            prefs.edit().remove("br_token").apply();
+        }
         Toast.makeText(this, "Failed: " + msg + " — check the pairing code",
                 Toast.LENGTH_LONG).show();
         runOnUiThread(() -> {
             authed = false;
+            reconnecting = false;
             updatePairingCard(); updateGateIndicator();
         });
     }
@@ -469,65 +624,29 @@ public class MainActivity extends Activity
     public void onDisconnected() {
         boolean wasAuthed = authed;
         authed = false;
+        // The relay owns the reconnection (one loop, with backoff).
+        // We only show what is happening.
+        reconnecting = wasAuthed;
         runOnUiThread(() -> {
             latencyText.setText("— ms");
             latencyDot.setBackgroundTintList(ColorStateList.valueOf(0xFF6B6B6B));
             updateBrowserDown();
-            if (wasAuthed) {
-                // Server died or network dropped — auto-reconnect with
-                // the saved fingerprint instead of showing the pairing card.
-                scheduleReconnect();
-            } else {
-                updatePairingCard(); updateGateIndicator();
+            updateTakeover();
+            if (wasAuthed && statusHostText != null) {
+                statusHostText.setText("Reconnecting…");
             }
+            updatePairingCard(); updateGateIndicator();
         });
-    }
-
-    private int reconnectAttempts = 0;
-    private Runnable reconnectRunnable;
-
-    /** Auto-reconnect with exponential backoff (fingerprint auth). */
-    private void scheduleReconnect() {
-        if (reconnectRunnable != null) {
-            handler.removeCallbacks(reconnectRunnable);
-        }
-        reconnectAttempts = 0;
-        // Show reconnecting state in the status row.
-        if (statusHostText != null) {
-            statusHostText.setText("Menghubungkan ulang…");
-        }
-        updatePairingCard(); updateGateIndicator();
-        reconnectRunnable = new Runnable() {
-            @Override public void run() {
-                if (authed) return; // Already reconnected.
-                reconnectAttempts++;
-                Log.i(TAG, "reconnect attempt " + reconnectAttempts);
-                connect();
-                // Exponential backoff: 2s, 4s, 8s, max 30s.
-                long delay = Math.min(2000L * (1L << Math.min(reconnectAttempts, 4)), 30000L);
-                handler.postDelayed(this, delay);
-            }
-        };
-        handler.post(reconnectRunnable);
-    }
-
-    /** Cancel pending reconnect (e.g. user manually disconnects). */
-    private void cancelReconnect() {
-        if (reconnectRunnable != null) {
-            handler.removeCallbacks(reconnectRunnable);
-            reconnectRunnable = null;
-        }
-        reconnectAttempts = 0;
     }
 
     /** User-friendly error text: never leak java.io.* class names. */
     static String friendlyError(String msg) {
-        if (msg == null) return "koneksi gagal";
+        if (msg == null) return "connection failed";
         String m = msg.toLowerCase();
         // Strip exception class prefixes.
         msg = msg.replaceAll("^[a-zA-Z0-9_.]+\\.(IOException|Exception|SocketException|UnknownHostException|ConnectException|SocketTimeoutException):\\s*", "");
         if (m.contains("econnrefused") || m.contains("connection refused")) {
-            return "server menolak koneksi — pastikan relay jalan di PC";
+            return "the server refused the connection — make sure the relay runs on the PC";
         }
         if (m.contains("ehostunreach") || m.contains("enetunreach") || m.contains("unreachable")) {
             return "host unreachable — check WiFi / IP";
@@ -539,12 +658,12 @@ public class MainActivity extends Activity
             return "connection timeout — the server did not respond";
         }
         if (m.contains("broken pipe") || m.contains("connection reset")) {
-            return "koneksi terputus";
+            return "the connection was dropped";
         }
         // Fallback: trimmed raw message, no package prefixes.
         msg = msg.replaceAll("[a-z]+\\.[a-z0-9_.]+\\.", "");
         if (msg.length() > 80) msg = msg.substring(0, 80) + "…";
-        return msg.isEmpty() ? "koneksi gagal" : msg;
+        return msg.isEmpty() ? "connection failed" : msg;
     }
 
     private long lastConnErrToast = 0;
@@ -562,7 +681,7 @@ public class MainActivity extends Activity
         lastConnErrToast = now;
         String friendly = friendlyError(msg);
         runOnUiThread(() -> Toast.makeText(this,
-                "Koneksi gagal: " + friendly, Toast.LENGTH_LONG).show());
+                "Connection failed: " + friendly, Toast.LENGTH_LONG).show());
     }
 
     /** Manual reconnect (tap the latency pill when disconnected). */
@@ -587,13 +706,13 @@ public class MainActivity extends Activity
     }
 
     @Override
-    public void mouse(String action, float x, float y, String button) {
-        relay.sendMouse(action, x, y, button);
+    public void mouse(String action, float x, float y, String button, int iw, int ih) {
+        relay.sendMouse(action, x, y, button, iw, ih);
     }
 
     @Override
-    public void wheel(float x, float y, float dx, float dy) {
-        relay.sendWheel(x, y, dx, dy);
+    public void wheel(float x, float y, float dx, float dy, int iw, int ih) {
+        relay.sendWheel(x, y, dx, dy, iw, ih);
     }
 
     @Override
@@ -846,7 +965,7 @@ public class MainActivity extends Activity
     }
 
     private void soon(String what) {
-        Toast.makeText(this, what + " — segera hadir", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, what + " — coming soon", Toast.LENGTH_SHORT).show();
     }
 
     // ---- tabs ----
@@ -946,7 +1065,7 @@ public class MainActivity extends Activity
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         titles.setLayoutParams(tlp);
         TextView h1 = new TextView(this);
-        h1.setText("Beranda");
+        h1.setText("Home");
         h1.setTextSize(20);
         h1.setTextColor(0xFFDADADA);
         h1.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -983,7 +1102,7 @@ public class MainActivity extends Activity
         pairingCard.addView(gateIndicator);
         updateGateIndicator();
         TextView ps = new TextView(this);
-        ps.setText("Pilih cara pairing:");
+        ps.setText("Choose how to pair:");
         ps.setTextSize(12);
         ps.setTextColor(0xFF9A9A9A);
         ps.setPadding(0, (int) dp(2), 0, (int) dp(12));
@@ -1103,7 +1222,7 @@ public class MainActivity extends Activity
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         st.setLayoutParams(stlp);
         TextView st1 = new TextView(this);
-        st1.setText("Terhubung ke PC");
+        st1.setText("Connected to the PC");
         st1.setTextSize(13);
         st1.setTextColor(0xFFDADADA);
         TextView st2 = new TextView(this);
@@ -1115,7 +1234,7 @@ public class MainActivity extends Activity
         statusRow.addView(st);
         statusHostText = st2;
         android.widget.Button disBtn = new android.widget.Button(this);
-        disBtn.setText("Putus");
+        disBtn.setText("Disconnect");
         disBtn.setTextSize(12);
         disBtn.setTextColor(0xFFFF8A8A);
         android.graphics.drawable.GradientDrawable dbgb =
@@ -1125,9 +1244,10 @@ public class MainActivity extends Activity
         dbgb.setStroke((int) dp(1), 0xFF4A2A2A);
         disBtn.setBackground(dbgb);
         disBtn.setOnClickListener(v -> {
-            cancelReconnect();
             relay.disconnect();
             authed = false;
+            reconnecting = false;
+            updateTakeover();
             updatePairingCard(); updateGateIndicator();
         });
         statusRow.addView(disBtn);
@@ -1157,7 +1277,7 @@ public class MainActivity extends Activity
         secRow.setOrientation(LinearLayout.HORIZONTAL);
         secRow.setGravity(Gravity.CENTER_VERTICAL);
         secRow.setPadding(hp, (int) dp(8), hp, 0);
-        TextView sec = makeSectionLabel("APLIKASI");
+        TextView sec = makeSectionLabel("APPS");
         LinearLayout.LayoutParams secLp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         sec.setLayoutParams(secLp);
@@ -1228,14 +1348,14 @@ public class MainActivity extends Activity
         runOnUiThread(() -> {
             String s;
             if (authed && browserUp) {
-                s = "✓ Server  →  ✓ Chrome  →  ✓ Siap";
+                s = "✓ Server  →  ✓ Chrome  →  ✓ Ready";
             } else if (authed) {
-                s = "✓ Server  →  ◌ Chrome  →  ○ Siap";
-            } else if (reconnectRunnable != null) {
-                // Reconnecting after unexpected disconnect.
-                s = "◌ Server  →  ○ Chrome  →  ○ Siap  (menghubungkan ulang…)";
+                s = "✓ Server  →  ◌ Chrome  →  ○ Ready";
+            } else if (reconnecting) {
+                // Reconnecting after an unexpected disconnect.
+                s = "◌ Server  →  ◌ Chrome  →  ○ Ready  (reconnecting…)";
             } else {
-                s = "○ Server  →  ○ Chrome  →  ○ Siap";
+                s = "○ Server  →  ○ Chrome  →  ○ Ready";
             }
             gateIndicator.setText(s);
         });
@@ -1246,12 +1366,14 @@ public class MainActivity extends Activity
         runOnUiThread(() -> {
             if (pairingCard == null) return;
             // During auto-reconnect, keep the status row (not the pairing card).
-            boolean showStatus = authed || reconnectRunnable != null;
+            boolean showStatus = authed || reconnecting;
             pairingCard.setVisibility(showStatus ? View.GONE : View.VISIBLE);
             statusRow.setVisibility(showStatus ? View.VISIBLE : View.GONE);
             if (authed) {
                 String host = prefs.getString("br_host", "");
-                if (statusHostText != null) statusHostText.setText(host);
+                if (statusHostText != null) statusHostText.setText(host + statusNote());
+            } else if (reconnecting) {
+                if (statusHostText != null) statusHostText.setText("Reconnecting…");
             } else {
                 // Pre-fill saved host.
                 String saved = prefs.getString("br_host", "");
@@ -1273,12 +1395,13 @@ public class MainActivity extends Activity
     private void onPairRequest() {
         String host = pairCleanHost();
         if (host.isEmpty()) {
-            Toast.makeText(this, "Isi server dulu (host:port)", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Fill in the server address first (host:port)",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
         prefs.edit().putString("br_host", host).apply();
         pairRequestBtn.setEnabled(false);
-        pairRequestBtn.setText("Menunggu panel PC…");
+        pairRequestBtn.setText("Waiting for the PC panel…");
         pairRequested = true;
         if (pairWs != null) pairWs.close();
         pairWs = new WsClient();
@@ -1299,10 +1422,14 @@ public class MainActivity extends Activity
             @Override public void onMessage(String text) {
                 try {
                     org.json.JSONObject m = new org.json.JSONObject(text);
-                    if ("pair_wait".equals(m.optString("type"))) {
+                    String t = m.optString("type", "");
+                    if ("pair_wait".equals(t)) {
                         runOnUiThread(() -> Toast.makeText(MainActivity.this,
                                 "Check the PC panel — type the code shown there",
                                 Toast.LENGTH_LONG).show());
+                    } else if ("error".equals(t)) {
+                        // "already paired", "too many requests", ...
+                        onPairError(m.optString("message", "error"));
                     }
                 } catch (Exception ignored) {}
             }
@@ -1316,8 +1443,18 @@ public class MainActivity extends Activity
             pairRequested = false;
             pairRequestBtn.setEnabled(true);
             pairRequestBtn.setText("Request Pairing Code");
-            Toast.makeText(this, "Failed to request code: " + friendlyError(msg),
-                    Toast.LENGTH_LONG).show();
+            String text;
+            if (msg != null && msg.contains("already paired")) {
+                // The server knows this device: the fingerprint is enough.
+                prefs.edit().remove("br_token").apply();
+                text = "This device is already paired — connecting…";
+                connect();
+            } else if (msg != null && msg.contains("too many requests")) {
+                text = "Too many requests — wait a moment and try again.";
+            } else {
+                text = "Failed to request code: " + friendlyError(msg);
+            }
+            Toast.makeText(this, text, Toast.LENGTH_LONG).show();
         });
     }
 
@@ -1326,7 +1463,8 @@ public class MainActivity extends Activity
         String host = pairCleanHost();
         String code = pairCodeInput.getText().toString().trim();
         if (host.isEmpty()) {
-            Toast.makeText(this, "Isi server dulu (host:port)", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Fill in the server address first (host:port)",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
         if (code.length() != 6) {
@@ -1439,10 +1577,10 @@ public class MainActivity extends Activity
             llp.topMargin = (int) dp(6);
             label.setLayoutParams(llp);
             tile.addView(label);
-            // "terbuka" label for open tabs.
+            // "open" label for open tabs.
             if (tabOpen) {
                 TextView openLabel = new TextView(this);
-                openLabel.setText("● terbuka");
+                openLabel.setText("● open");
                 openLabel.setTextSize(9);
                 openLabel.setTextColor(0xFF4CAF50);
                 openLabel.setGravity(Gravity.CENTER);
@@ -1472,7 +1610,7 @@ public class MainActivity extends Activity
                     l2.remove(idx);
                     saveHome(l2);
                     renderHome();
-                    Toast.makeText(this, "Shortcut dihapus", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Shortcut removed", Toast.LENGTH_SHORT).show();
                 });
                 tile.setOnClickListener(null);
                 GridLayout.LayoutParams wlp = new GridLayout.LayoutParams(
@@ -1526,7 +1664,7 @@ public class MainActivity extends Activity
             plus.setLayoutParams(new LinearLayout.LayoutParams((int) dp(60), (int) dp(60)));
             add.addView(plus);
             TextView alabel = new TextView(this);
-            alabel.setText("Tambah");
+            alabel.setText("Add");
             alabel.setTextSize(11.5f);
             alabel.setTextColor(0xFFDADADA);
             alabel.setGravity(Gravity.CENTER);
@@ -1545,21 +1683,21 @@ public class MainActivity extends Activity
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding((int) dp(4), 0, (int) dp(4), 0);
         final EditText nameIn = new EditText(this);
-        nameIn.setHint("Nama (cth: Facebook)");
+        nameIn.setHint("Name (e.g. Facebook)");
         final EditText urlIn = new EditText(this);
-        urlIn.setHint("URL (cth: facebook.com)");
+        urlIn.setHint("URL (e.g. facebook.com)");
         urlIn.setInputType(android.text.InputType.TYPE_TEXT_VARIATION_URI);
         col.addView(nameIn);
         col.addView(urlIn);
         new AlertDialog.Builder(this)
-                .setTitle("Tambah shortcut")
+                .setTitle("Add shortcut")
                 .setView(col)
                 .setPositiveButton("Save", (d, w) -> {
                     String name = nameIn.getText().toString().trim();
                     String url = urlIn.getText().toString().trim()
                             .replaceFirst("^https?://", "").replaceAll("/$", "");
                     if (name.isEmpty()) {
-                        Toast.makeText(this, "Isi namanya dulu", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Enter a name first", Toast.LENGTH_SHORT).show();
                         return;
                     }
                     if (url.isEmpty() || !url.contains(".")) {
@@ -1570,7 +1708,7 @@ public class MainActivity extends Activity
                     l.add(new String[]{name, url, "#8B72F0"});
                     saveHome(l);
                     renderHome();
-                    Toast.makeText(this, "Shortcut tersimpan", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Shortcut saved", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -1602,9 +1740,9 @@ public class MainActivity extends Activity
         input.setText("https://");
         input.setSelection(input.getText().length());
         new AlertDialog.Builder(this)
-                .setTitle("Buka URL")
+                .setTitle("Open URL")
                 .setView(input)
-                .setPositiveButton("Buka", (d, w) -> {
+                .setPositiveButton("Open", (d, w) -> {
                     String u = input.getText().toString().trim();
                     if (!u.isEmpty()) relay.sendTabNew(u);
                 })
@@ -1684,7 +1822,7 @@ public class MainActivity extends Activity
                 askFind();
                 break;
             case "settings":
-                soon("Pengaturan");
+                soon("Settings");
                 break;
             default:
                 break;
@@ -1774,7 +1912,7 @@ public class MainActivity extends Activity
                 && cm.getPrimaryClip().getItemCount() > 0
                 ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
         if (text == null || text.length() == 0) {
-            Toast.makeText(this, "Clipboard HP kosong", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "The phone clipboard is empty", Toast.LENGTH_SHORT).show();
             return;
         }
         relay.sendClipboardSet(text.toString());
