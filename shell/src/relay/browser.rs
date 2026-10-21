@@ -80,6 +80,12 @@ struct BState {
     /// it can be re-applied when a tab is attached: a new tab starts
     /// with the plain window size again.
     viewport: Option<(u32, u32, f64)>,
+    /// Is a mouse button held down on the page? A client that goes
+    /// away mid-drag would leave it stuck.
+    pointer_down: bool,
+    /// Where the pointer was, for the release after a disconnect.
+    pointer_x: f64,
+    pointer_y: f64,
     /// When the screencast last delivered a frame (millis since epoch).
     /// If that stops, the page is not painting (a minimized window, a
     /// background tab) and the poll takes over.
@@ -126,6 +132,9 @@ impl Browser {
                 frame_h: 0.0,
                 viewport: None,
                 last_screencast_ms: 0,
+                pointer_down: false,
+                pointer_x: 0.0,
+                pointer_y: 0.0,
                 orig_ua: String::new(),
                 last_tabs: Vec::new(),
             }),
@@ -624,6 +633,12 @@ impl Browser {
         let button = if ["left", "middle", "right"].contains(&button) { button } else { "left" };
         // Client sends frame pixels; CDP expects the page's CSS pixels.
         let (cx, cy) = self.to_css(x, y, img_w, img_h);
+        {
+            let mut st = self.state.lock().unwrap();
+            st.pointer_down = action == "down";
+            st.pointer_x = cx;
+            st.pointer_y = cy;
+        }
         if action != "move" {
             let (st_pw, st_ph, st_fw, st_fh, st_dsf) = {
                 let st = self.state.lock().unwrap();
@@ -640,6 +655,30 @@ impl Browser {
         )
         .await?;
         Ok(())
+    }
+
+    /// Let go of the mouse button.
+    ///
+    /// A client that closes the tab or the app while it is dragging
+    /// leaves the button down on the page: the next person who clicks
+    /// drags instead of clicking.
+    pub async fn release_pointer(&self) {
+        let (down, x, y) = {
+            let mut st = self.state.lock().unwrap();
+            let d = st.pointer_down;
+            st.pointer_down = false;
+            (d, st.pointer_x, st.pointer_y)
+        };
+        if !down {
+            return;
+        }
+        let _ = self
+            .call(
+                "Input.dispatchMouseEvent",
+                json!({"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1}),
+            )
+            .await;
+        rlog!("released the mouse button after a client left");
     }
 
     pub async fn wheel(

@@ -330,6 +330,13 @@ impl Hub {
             self.send_role(nid);
             self.broadcast_roles();
         }
+        // A client that left mid-drag must not leave the mouse button
+        // down on the page.
+        if let Some(b) = self.browser() {
+            tokio::spawn(async move {
+                b.release_pointer().await;
+            });
+        }
     }
 
     // ---- sending helpers (Go: sendJSON/sendErr, drop-on-full) ----
