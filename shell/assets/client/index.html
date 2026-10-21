@@ -84,6 +84,9 @@
   /* With the sheet open the middle of the viewport is covered - keep
      the empty state in the strip that is still visible. */
   body.sheet-open #browserDown { align-items: flex-start; padding-top: 56px; }
+  /* The home screen owns the viewport - the remote's empty state must
+     not float over it. */
+  body.home-open #browserDown { display: none; }
   #browserDown .bd-card {
     background: var(--panel); border: 1px solid var(--border);
     border-radius: 18px; padding: 22px 24px; max-width: 340px;
@@ -355,11 +358,26 @@
   #home header h1 { margin: 0; font-size: 20px; }
   #home header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
   #homeEdit {
-    border: 1px solid var(--border); background: var(--raised); color: var(--text);
-    border-radius: 999px; padding: 8px 14px; min-height: 38px; font-size: 12.5px;
-    font-weight: 600; cursor: pointer; font-family: inherit; flex: 0 0 auto;
+    border: 1px solid var(--border); background: var(--raised); color: var(--muted);
+    border-radius: 999px; padding: 4px 12px; min-height: 26px; font-size: 11.5px;
+    font-weight: 600; letter-spacing: .04em; cursor: pointer; font-family: inherit;
+    flex: 0 0 auto; align-self: center;
   }
+  #homeEdit:hover { color: var(--text); border-color: var(--muted); }
   #homeEdit.on { background: rgba(139,114,240,.18); border-color: var(--accent); color: var(--accent); }
+  /* Chrome is down: the search and the shortcuts cannot work, so the
+     whole right side steps back. */
+  body.chrome-down #home .home-side { opacity: .4; pointer-events: none; }
+  .pc-card {
+    margin: 16px 16px 0; padding: 14px 16px; border: 1px solid var(--border);
+    border-radius: 14px; background: var(--panel);
+  }
+  .pc-card h3 { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .07em; }
+  .pc-line { display: flex; align-items: center; gap: 10px; font-size: 13px; padding: 3px 0; }
+  .pc-k { color: var(--faint); width: 58px; flex: 0 0 auto; }
+  .pc-line > span:nth-child(2) { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pc-line button { margin-left: auto; }
   #home .searchbar { padding: 14px 16px 4px; }
   #home .searchbar .box {
     display: flex; align-items: center; gap: 9px; background: var(--panel);
@@ -428,7 +446,11 @@
     body.home-open #home { left: 300px; }
     .home-grid { grid-template-columns: 340px 1fr; gap: 22px; align-items: start; max-width: 1080px; margin: 0 auto; }
     #home header { max-width: 1080px; margin: 0 auto; }
-    #homeGrid { grid-template-columns: repeat(6, 1fr); }
+    /* Bigger tiles, fewer columns: the grid should fill the column. */
+    #homeGrid { grid-template-columns: repeat(5, 1fr); gap: 24px 12px; }
+    #homeGrid .tile .icon { width: 68px; height: 68px; border-radius: 18px; }
+    #homeGrid .tile .icon svg { width: 34px; height: 34px; }
+    #homeGrid .tile .label { font-size: 12.5px; max-width: 110px; }
   }
   /* Not enough room for two columns next to the rail. */
   @media (min-width: 900px) and (max-width: 1180px) {
@@ -437,7 +459,20 @@
   }
   #pairCard { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
   #pairCard h3 { margin: 0 0 10px; font-size: 14.5px; }
-  #pairCard .steps { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  #pairCard .steps {
+    display: flex; align-items: center; gap: 10px; font-size: 13px;
+    color: var(--muted); margin-bottom: 14px;
+  }
+  #pairCard .steps span { display: inline-flex; align-items: center; gap: 7px; }
+  #pairCard .steps span b {
+    width: 9px; height: 9px; border-radius: 50%;
+    border: 1.5px solid var(--faint); background: transparent;
+  }
+  #pairCard .steps span.on { color: var(--text); }
+  #pairCard .steps span.on b {
+    background: var(--green); border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(63,185,80,.16);
+  }
   #pairCard .steps i { color: var(--faint); font-style: normal; }
   #pairCard label {
     display: block; font-size: 11.5px; color: var(--muted); margin: 10px 0 5px;
@@ -451,10 +486,12 @@
   #pairCard input[type="text"]:focus { border-color: var(--accent); }
   #pairCard input:disabled { opacity: .5; }
   #pairCard button.primary { width: 100%; margin-top: 10px; }
-  #pairCard .steps span.on { color: var(--green); }
-  #openRemote { width: 100%; margin-top: 10px; padding: 13px 16px; border-radius: 11px;
+  #openRemote, #launchChrome {
+    width: 100%; margin-top: 10px; padding: 13px 16px; border-radius: 11px;
     border: 1px solid var(--border); background: var(--raised); color: var(--text);
-    font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+    font: inherit; font-size: 14px; font-weight: 650; cursor: pointer;
+  }
+  #launchChrome { border-color: var(--accent); color: var(--accent); }
 
   /* ===== tool groups ===== */
   .group { margin-top: 18px; }
@@ -700,9 +737,9 @@
     <div id="pairCard">
       <h3>Connect to your PC</h3>
       <div class="steps">
-        <span id="stServer">○ Server</span><i>→</i>
-        <span id="stChrome">○ Chrome</span><i>→</i>
-        <span id="stReady">○ Ready</span>
+        <span id="stServer"><b></b>Server</span><i>→</i>
+        <span id="stChrome"><b></b>Chrome</span><i>→</i>
+        <span id="stReady"><b></b>Ready</span>
       </div>
       <div id="auth">
         <p id="authDesc">Connecting…</p>
@@ -714,9 +751,16 @@
         <div id="authErr"></div>
       </div>
       <button id="openRemote" class="secondary" style="display:none">Open the remote view</button>
+      <button id="launchChrome" class="secondary" style="display:none">Launch Chrome on the PC</button>
     </div>
 
     <div class="home-side">
+      <div class="pc-card" id="pcCard" style="display:none">
+        <h3>This PC</h3>
+        <div class="pc-line"><span class="pc-k">Name</span><span id="pcHost">—</span></div>
+        <div class="pc-line"><span class="pc-k">Address</span><span id="pcUrl">—</span>
+          <button id="pcCopy" class="ghost" title="Copy the address">Copy</button></div>
+      </div>
       <div class="searchbar"><div class="box" id="homeSearch">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <span>Search or type URL…</span>

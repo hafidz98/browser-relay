@@ -119,15 +119,24 @@ var qrScanned = false;
   function updateSteps() {
     var set = function (id, on) {
       var el = document.getElementById(id);
-      if (el) { el.textContent = (on ? "● " : "○ ") + el.textContent.slice(2); el.classList.toggle("on", !!on); }
+      if (el) el.classList.toggle("on", !!on);
     };
     var serverUp = ws && ws.readyState === 1;
+    // "Ready" means the phone can really drive Chrome: the socket is
+    // up, this device is paired and Chrome is running. A green Ready
+    // while Chrome is down would be a lie.
+    var ready = authed && browserUp;
     set("stServer", serverUp);
     set("stChrome", browserUp);
-    set("stReady", authed);
+    set("stReady", ready);
+    // One action at a time: the remote view only opens when it works,
+    // otherwise the only useful thing is starting Chrome.
     var open = document.getElementById("openRemote");
-    if (open) open.style.display = authed ? "block" : "none";
+    if (open) open.style.display = ready ? "block" : "none";
+    var launch = document.getElementById("launchChrome");
+    if (launch) launch.style.display = (authed && !browserUp && isDriver) ? "block" : "none";
     setConnected(authed);
+    fillPcCard();
   }
 
   // ---- the tools rail can be folded away (desktop) ----
@@ -145,6 +154,30 @@ var qrScanned = false;
     if (hide) hide.onclick = function () { set(true); };
     if (show) show.onclick = function () { set(false); };
   })();
+
+  // ---- this PC (host + address) ----
+  var pcHost = document.getElementById("pcHost");
+  var pcUrl = document.getElementById("pcUrl");
+  var pcCard = document.getElementById("pcCard");
+  var pcHostName = "";
+  function fillPcCard() {
+    if (!pcCard) return;
+    if (!authed) { pcCard.style.display = "none"; return; }
+    pcCard.style.display = "block";
+    if (pcHost) pcHost.textContent = pcHostName || "-";
+    if (pcUrl) pcUrl.textContent = location.origin;
+  }
+  var pcCopy = document.getElementById("pcCopy");
+  if (pcCopy) pcCopy.onclick = function () {
+    var text = location.origin;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { toast("Address copied"); },
+        function () { toast("Could not copy the address"); });
+    } else {
+      toast("Address: " + text);
+    }
+  };
 
   // ---- theme ----
   function currentTheme() { return document.documentElement.getAttribute("data-theme") || "dark"; }
@@ -172,8 +205,10 @@ var qrScanned = false;
   // "Stop Chrome" only makes sense while Chrome is actually running.
   function setChromeRunning(up) {
     browserUp = !!up;
+    document.body.classList.toggle("chrome-down", !browserUp);
     var b = document.querySelector('[data-act="chrome-stop"]');
     if (b) b.classList.toggle("off", !browserUp);
+    updateSteps();
   }
   function showBrowserDown(down) {
     if (browserDownEl) browserDownEl.style.display = down ? "flex" : "none";
@@ -265,6 +300,7 @@ var qrScanned = false;
           setStatus(isDriver ? "Driving Chrome" : "View only", isDriver ? "live" : "view");
           // Which PC are we driving? (the relay sends the host name)
           if (m.host) {
+            pcHostName = m.host;
             peer.innerHTML = '<i></i>Paired to <b>' + m.host + "</b>";
             peer.style.display = "flex";
           }
@@ -629,6 +665,11 @@ var qrScanned = false;
   }
   var openRemote = document.getElementById("openRemote");
   if (openRemote) openRemote.onclick = function () { closeHome(); };
+  var launchCard = document.getElementById("launchChrome");
+  if (launchCard) launchCard.onclick = function () {
+    send({ type: "chrome", action: "launch" });
+    toast("Launching Chrome on the PC");
+  };
 
   // Keyboard shortcuts (desktop): they mirror the tool buttons.
   document.addEventListener("keydown", function (e) {

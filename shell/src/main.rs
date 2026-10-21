@@ -20,7 +20,7 @@ use tray_icon::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 use relay::{CoreState, RelayHandle, RelayOpts};
 
-pub const VERSION: &str = "0.9.43";
+pub const VERSION: &str = "0.9.44";
 const ICON_RGBA: &[u8] = include_bytes!("../assets/icon.rgba");
 const ICON_SIZE: u32 = 64;
 /// Loopback port used as a single-instance lock (held for lifetime).
@@ -562,7 +562,8 @@ impl App {
         let tx = self.fw_tx.clone();
         std::thread::spawn(move || {
             let exe = std::env::current_exe().unwrap_or_default();
-            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe)));
+            let port = crate::config::get().relay_port;
+            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe, port)));
         });
     }
 
@@ -572,9 +573,10 @@ impl App {
         let tx = self.fw_tx.clone();
         std::thread::spawn(move || {
             let exe = std::env::current_exe().unwrap_or_default();
-            let added = firewall::add_allow_rule(&exe);
+            let port = crate::config::get().relay_port;
+            let added = firewall::add_allow_rule(&exe, port);
             let _ = tx.send(FwUpdate::RuleAdded(added));
-            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe)));
+            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe, port)));
         });
     }
 
