@@ -312,11 +312,22 @@ impl Hub {
     fn send_auth_error(&self, id: u64, msg: &str) {
         let st = self.state.lock().unwrap();
         if let Some(c) = st.clients.get(&id) {
-            let _ = c.send.try_send(OutMsg::Text(
-                json!({"type": "error", "message": msg}).to_string(),
-            ));
-            if msg != "unknown device" {
-                let _ = c.send.try_send(OutMsg::CloseAfterFlush);
+            // Counted sends: the writer pump decrements `queued` for
+            // every message it drains, so anything try_sent here must
+            // increment too — otherwise the counter underflows to
+            // usize::MAX and broadcast_frame permanently skips this
+            // client (black screen after the "unknown device" flow).
+            if c
+                .send
+                .try_send(OutMsg::Text(
+                    json!({"type": "error", "message": msg}).to_string(),
+                ))
+                .is_ok()
+            {
+                c.queued.fetch_add(1, Ordering::Relaxed);
+            }
+            if msg != "unknown device" && c.send.try_send(OutMsg::CloseAfterFlush).is_ok() {
+                c.queued.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -595,8 +606,14 @@ impl Hub {
                 let w = m.width.unwrap_or(390) as u32;
                 let h = m.height.unwrap_or(844) as u32;
                 if let Err(e) = b.set_mobile(m.mobile, w, h).await {
-                    self.send_err(id, &format!("emulation failed: {e}"));
-                    return;
+                    // No tab attached yet: the preference is already
+                    // stored in Browser state and applies on the next
+                    // attach — echoing the raw error at every fresh
+                    // connect (Chrome down) leaked dev text to users.
+                    if !e.contains("no tab attached") {
+                        self.send_err(id, &format!("emulation failed: {e}"));
+                        return;
+                    }
                 }
                 self.send_json(id, json!({"type": "emulation", "mobile": m.mobile}));
             }

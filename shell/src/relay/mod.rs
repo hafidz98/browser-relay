@@ -433,6 +433,21 @@ pub fn detect_lan_ips() -> Vec<String> {
             if iface.is_loopback() {
                 continue;
             }
+            // Skip virtual adapters: WSL/Hyper-V vEthernet (172.x),
+            // VMware, VirtualBox, Tailscale, ZeroTier. Their addresses
+            // are unreachable from a phone on the LAN — and WSL's
+            // vEthernet usually sorts FIRST, poisoning the primary
+            // phone_url and the pairing QR host.
+            let name = iface.name.to_lowercase();
+            if name.starts_with("vethernet")
+                || name.starts_with("wsl")
+                || name.contains("vmware")
+                || name.contains("virtualbox")
+                || name.contains("tailscale")
+                || name.contains("zerotier")
+            {
+                continue;
+            }
             if let std::net::IpAddr::V4(v4) = iface.ip() {
                 let o = v4.octets();
                 if o[0] == 169 && o[1] == 254 {

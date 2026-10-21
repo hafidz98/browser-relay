@@ -116,7 +116,7 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
                 .map(|a| format!("http://{}", a))
                 .unwrap_or_default();
             let apk_available = chrome::config_dir().join("browser-relay.apk").exists();
-            let html = pair_page(valid.then_some(code.as_deref()).flatten(), &base, apk_available);
+            let html = pair_page(code.as_deref(), valid, &base, apk_available);
             respond(&mut stream, "200 OK", "text/html; charset=utf-8", html.as_bytes()).await;
         }
         "/app.apk" => {
@@ -180,9 +180,15 @@ fn percent_encode(s: &str) -> String {
 /// Android app via an intent:// URL whose browser fallback is the
 /// pre-paired web client; without the app (or without a valid code)
 /// the user lands on the web client.
-fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
-    let (intent_url, direct_url, web_url, code_html) = match code {
-        Some(c) => {
+///
+/// A present-but-invalid code (expired/burned — codes rotate every
+/// 5 minutes) gets an explicit ERROR state: the old page reused the
+/// success copy minus the code block, so a dead scan read exactly
+/// like a working one.
+fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -> String {
+    let has_code = code.is_some();
+    let (intent_url, direct_url, web_url, code_html, blurb) = match code {
+        Some(c) if valid => {
             let web = format!("{base}/?code={c}");
             // `host` carries the phone-visible base URL so the native
             // app can connect with zero manual entry after a QR scan.
@@ -196,26 +202,52 @@ fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
                 percent_encode(base)
             );
             let code_h = format!(
-                "<div class=\"code\">{}</div><p class=\"codehint\">atau ketik manual kode ini di aplikasi</p>",
+                "<div class=\"code\">{}</div><p class=\"codehint\">or type this code manually in the app</p>",
                 c
             );
-            (intent, direct, web, code_h)
+            (
+                intent,
+                direct,
+                web,
+                code_h,
+                "Pairing scanned. Tap the button to open the app — if it doesn't open, type the code manually.",
+            )
         }
+        Some(_) => (
+            String::new(),
+            String::new(),
+            format!("{base}/"),
+            String::new(),
+            "This code is no longer valid — it expired or was already used. Open the browser-relay panel on the laptop for a fresh code, then scan its QR again.",
+        ),
         None => (
             String::new(),
             String::new(),
             format!("{base}/"),
             String::new(),
+            "No pairing code in this link. Open the browser-relay panel on the laptop and scan its pairing QR.",
         ),
     };
+    // Only the valid state may offer the deep link: a dead code must
+    // never fire the intent (also asserted by tests/e2e.py).
+    let buttons = if valid && has_code {
+        r#"<a class="btn" href="{intent_url}">Open in app</a>
+  <a class="btn ghost" href="{direct_url}">Try another way</a>
+  <a class="btn ghost" href="{web_url}">Use the web version</a>"#
+            .replace("{intent_url}", &intent_url)
+            .replace("{direct_url}", &direct_url)
+            .replace("{web_url}", &web_url)
+    } else {
+        format!(r#"<a class="btn ghost" href="{web_url}">Use the web version</a>"#)
+    };
     let apk_btn = if apk_available {
-        r#"<a class="btn ghost" href="/app.apk">Download aplikasi Android</a>"#
+        r#"<a class="btn ghost" href="/app.apk">Download the Android app</a>"#
     } else {
         ""
     };
     format!(
         r#"<!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -226,10 +258,12 @@ fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
   .card {{ width:min(92vw,380px); background:#1e1e1e; border:1px solid #303030; border-radius:12px; padding:26px 22px; text-align:center; }}
   h1 {{ font-size:18px; margin:0 0 6px; }}
   p {{ color:#9a9a9a; margin:0 0 20px; font-size:13.5px; }}
+  p.warn {{ color:#d29922; }}
   .btn {{ display:block; padding:13px 16px; border-radius:8px; background:#8b72f0; color:#fff;
           text-decoration:none; font-weight:600; margin-bottom:10px; }}
   .btn.ghost {{ background:#262626; color:#dadada; border:1px solid #303030; font-weight:500; }}
   .dot {{ width:44px; height:44px; border-radius:50%; background:#8b72f0; margin:0 auto 16px; }}
+  .dot.err {{ background:#d29922; }}
   .code {{ font-size:34px; font-weight:700; letter-spacing:12px; text-indent:12px; color:#fff;
            background:#141414; border:1px solid #303030; border-radius:10px; padding:12px; margin:0 0 6px; }}
   .codehint {{ font-size:12px !important; margin:0 0 18px !important; }}
@@ -237,17 +271,17 @@ fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
 </head>
 <body>
 <div class="card">
-  <div class="dot"></div>
+  <div class="dot{dot_cls}"></div>
   <h1>browser-relay</h1>
-  <p>Pairing berhasil discan. Ketuk tombol buat buka aplikasi — kalau nggak kebuka, ketik kodenya manual.</p>
+  <p{blurb_cls}>{blurb}</p>
   {code_html}
-  <a class="btn" href="{intent_url}">Buka di aplikasi</a>
-  <a class="btn ghost" href="{direct_url}">Coba cara lain</a>
-  <a class="btn ghost" href="{web_url}">Pakai versi web</a>
+  {buttons}
   {apk_btn}
 </div>
 </body>
-</html>"#
+</html>"#,
+        dot_cls = if valid && has_code { "" } else { " err" },
+        blurb_cls = if valid && has_code { "" } else { " class=\"warn\"" },
     )
 }
 

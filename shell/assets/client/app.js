@@ -33,7 +33,7 @@
 
   function showRequestButton() {
     authBox.style.display = "flex";
-    authDesc.innerHTML = "Perangkat ini belum terpair.<br>Minta kode dari panel PC.";
+    authDesc.innerHTML = "This device isn't paired yet.<br>Request a code from the PC panel.";
     tokenInput.style.display = "none";
     goBtn.style.display = "none";
     reqBtn.style.display = "block";
@@ -56,13 +56,13 @@
   // The panel always displays the current code — no need for a
   // separate "request" step.
   function showPairingUI() {
-    showPairInput("Ketik 6 digit kode dari panel PC.");
+    showPairInput("Type the 6-digit code from the PC panel.");
   }
 
   reqBtn.onclick = function () {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: "pair_request", fingerprint: fingerprint, name: deviceName }));
-      authDesc.textContent = "Meminta kode…";
+      authDesc.textContent = "Requesting code…";
       reqBtn.style.display = "none";
     }
   };
@@ -70,7 +70,7 @@
   goBtn.onclick = function () {
     var code = tokenInput.value.trim();
     if (!/^\d{6}$/.test(code)) {
-      authErr.textContent = "Kode harus 6 digit";
+      authErr.textContent = "The code must be 6 digits";
       return;
     }
     if (ws && ws.readyState === 1) {
@@ -80,7 +80,7 @@
       authDesc.textContent = "Menghubungkan…";
       authErr.textContent = "";
     } else {
-      authErr.textContent = "Koneksi terputus — tunggu sebentar lalu coba lagi";
+      authErr.textContent = "Connection lost — waiting a moment, then retrying";
     }
   };
 
@@ -172,7 +172,7 @@
           authBox.style.display = "none";
           authErr.textContent = "";
           goBtn.disabled = false;
-          goBtn.textContent = "Hubungkan";
+          goBtn.textContent = "Connect";
           setStatus(isDriver ? "driving" : "view only");
           if (m.browserUp !== undefined) showBrowserDown(!m.browserUp);
           // Auto-set emulation mode on first connect based on device type.
@@ -221,16 +221,16 @@
           break;
         case "pair_wait":
           // Code is now on the PC panel — show the input.
-          showPairInput("Cek panel di PC, ketik 6 digit kode yang muncul.");
+          showPairInput("Check the PC panel and type the 6-digit code shown there.");
           break;
         case "error":
           if (!authed) {
             goBtn.disabled = false;
-            goBtn.textContent = "Hubungkan";
+            goBtn.textContent = "Connect";
             if (m.message === "unknown device") {
               showPairingUI();
             } else {
-              authDesc.textContent = "Pairing gagal";
+              authDesc.textContent = "Pairing failed";
               authErr.textContent = m.message || "connection failed";
             }
           }
@@ -646,7 +646,7 @@
       var name = document.getElementById("homeDlgName").value.trim();
       var url = document.getElementById("homeDlgUrl").value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
       if (!name) { toast("Isi namanya dulu"); return; }
-      if (!url || url.indexOf(".") < 0) { toast("URL-nya belum valid"); return; }
+      if (!url || url.indexOf(".") < 0) { toast("Invalid URL"); return; }
       shortcuts.push({ name: name, url: url });
       save(); render();
       document.getElementById("homeDlg").classList.remove("open");

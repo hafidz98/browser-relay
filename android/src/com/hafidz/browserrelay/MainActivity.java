@@ -416,7 +416,7 @@ public class MainActivity extends Activity
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) {
             cm.setPrimaryClip(ClipData.newPlainText("relay", text));
-            Toast.makeText(this, "Clipboard laptop disalin", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Laptop clipboard copied", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -443,14 +443,14 @@ public class MainActivity extends Activity
         if ("unknown device".equals(msg)) {
             // Not paired yet — show the pairing card on beranda.
             runOnUiThread(() -> {
-                Toast.makeText(this, "Belum terpair — minta kode dari panel PC",
+                Toast.makeText(this, "Not paired yet — request a code from the PC panel",
                         Toast.LENGTH_LONG).show();
                 authed = false;
                 updatePairingCard(); updateGateIndicator();
             });
             return;
         }
-        Toast.makeText(this, "Gagal: " + msg + " — cek kode pairing",
+        Toast.makeText(this, "Failed: " + msg + " — check the pairing code",
                 Toast.LENGTH_LONG).show();
         runOnUiThread(() -> {
             authed = false;
@@ -461,7 +461,7 @@ public class MainActivity extends Activity
     @Override
     public void onPairWait() {
         runOnUiThread(() -> Toast.makeText(this,
-                "Cek panel di PC — ketik kode yang muncul",
+                "Check the PC panel — type the code shown there",
                 Toast.LENGTH_LONG).show());
     }
 
@@ -530,13 +530,13 @@ public class MainActivity extends Activity
             return "server menolak koneksi — pastikan relay jalan di PC";
         }
         if (m.contains("ehostunreach") || m.contains("enetunreach") || m.contains("unreachable")) {
-            return "host tidak terjangkau — cek WiFi / IP";
+            return "host unreachable — check WiFi / IP";
         }
         if (m.contains("unknownhost") || m.contains("unable to resolve")) {
-            return "host tidak dikenal — cek alamat server";
+            return "unknown host — check the server address";
         }
         if (m.contains("timeout") || m.contains("timed out")) {
-            return "koneksi timeout — server tidak merespons";
+            return "connection timeout — the server did not respond";
         }
         if (m.contains("broken pipe") || m.contains("connection reset")) {
             return "koneksi terputus";
@@ -570,7 +570,7 @@ public class MainActivity extends Activity
         manualConnect = true;
         runOnUiThread(() -> {
             latencyText.setText("…");
-            Toast.makeText(this, "Menghubungkan…", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show();
         });
         connect();
     }
@@ -791,7 +791,7 @@ public class MainActivity extends Activity
             tile.addView(name);
             tile.setOnClickListener(v -> {
                 if (!browserUp) {
-                    Toast.makeText(this, "Chrome belum jalan di laptop — jalankan dulu",
+                    Toast.makeText(this, "Chrome isn't running on the laptop — start it first",
                             Toast.LENGTH_LONG).show();
                     return;
                 }
@@ -970,7 +970,7 @@ public class MainActivity extends Activity
         pairingCard.setPadding(hp, (int) dp(16), hp, (int) dp(16));
 
         TextView pt = new TextView(this);
-        pt.setText("Hubungkan ke PC");
+        pt.setText("Connect to PC");
         pt.setTextSize(15);
         pt.setTextColor(0xFFDADADA);
         pt.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -1014,7 +1014,7 @@ public class MainActivity extends Activity
         pairingCard.addView(pairHostInput);
 
         pairRequestBtn = new android.widget.Button(this);
-        pairRequestBtn.setText("Minta Kode Pairing");
+        pairRequestBtn.setText("Request Pairing Code");
         pairRequestBtn.setTextColor(0xFFFFFFFF);
         pairRequestBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_link, 0, 0, 0);
         pairRequestBtn.setCompoundDrawablePadding((int) dp(8));
@@ -1028,7 +1028,7 @@ public class MainActivity extends Activity
         pairingCard.addView(pairRequestBtn);
 
         TextView cl = new TextView(this);
-        cl.setText("Kode dari panel PC (6 digit)");
+        cl.setText("Code from the PC panel (6 digits)");
         cl.setTextSize(12);
         cl.setTextColor(0xFF9A9A9A);
         cl.setPadding(0, (int) dp(4), 0, 0);
@@ -1049,7 +1049,7 @@ public class MainActivity extends Activity
         pairingCard.addView(pairCodeInput);
 
         pairConnectBtn = new android.widget.Button(this);
-        pairConnectBtn.setText("Hubungkan");
+        pairConnectBtn.setText("Connect");
         pairConnectBtn.setTextColor(0xFFDADADA);
         pairConnectBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_link, 0, 0, 0);
         pairConnectBtn.setCompoundDrawablePadding((int) dp(8));
@@ -1064,7 +1064,7 @@ public class MainActivity extends Activity
         pairingCard.addView(pairConnectBtn);
         // QR note (mockup).
         TextView qrNote = new TextView(this);
-        qrNote.setText("atau scan QR dari panel PC — otomatis kebuka");
+        qrNote.setText("or scan the QR from the PC panel — it opens automatically");
         qrNote.setTextSize(11);
         qrNote.setTextColor(0xFF6B6B6B);
         qrNote.setGravity(Gravity.CENTER);
@@ -1135,7 +1135,7 @@ public class MainActivity extends Activity
 
         // search box (mockup: 10px radius, not pill).
         TextView search = new TextView(this);
-        search.setText("\uD83D\uDD0D  Cari atau ketik URL…");
+        search.setText("\uD83D\uDD0D  Search or type URL…");
         search.setTextSize(13);
         search.setTextColor(0xFF6B6B6B);
         search.setPadding((int) dp(12), (int) dp(12), (int) dp(12), (int) dp(12));
@@ -1301,7 +1301,7 @@ public class MainActivity extends Activity
                     org.json.JSONObject m = new org.json.JSONObject(text);
                     if ("pair_wait".equals(m.optString("type"))) {
                         runOnUiThread(() -> Toast.makeText(MainActivity.this,
-                                "Cek panel di PC — ketik kode yang muncul",
+                                "Check the PC panel — type the code shown there",
                                 Toast.LENGTH_LONG).show());
                     }
                 } catch (Exception ignored) {}
@@ -1315,8 +1315,8 @@ public class MainActivity extends Activity
         runOnUiThread(() -> {
             pairRequested = false;
             pairRequestBtn.setEnabled(true);
-            pairRequestBtn.setText("Minta Kode Pairing");
-            Toast.makeText(this, "Gagal minta kode: " + friendlyError(msg),
+            pairRequestBtn.setText("Request Pairing Code");
+            Toast.makeText(this, "Failed to request code: " + friendlyError(msg),
                     Toast.LENGTH_LONG).show();
         });
     }
@@ -1330,7 +1330,7 @@ public class MainActivity extends Activity
             return;
         }
         if (code.length() != 6) {
-            Toast.makeText(this, "Kode harus 6 digit", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "The code must be 6 digits", Toast.LENGTH_SHORT).show();
             return;
         }
         prefs.edit().putString("br_host", host).putString("br_token", code).apply();
@@ -1339,7 +1339,7 @@ public class MainActivity extends Activity
         // Connect via the main relay client; onAuthOk flips the card.
         manualConnect = true;
         connect();
-        Toast.makeText(this, "Menghubungkan…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show();
     }
 
     /** Find the tab ID matching a shortcut URL, or null. */
@@ -1486,7 +1486,7 @@ public class MainActivity extends Activity
                     if (!browserUp) {
                         updateBrowserDown();
                         Toast.makeText(this,
-                                "Chrome belum jalan di laptop — jalankan dulu",
+                                "Chrome isn't running on the laptop — start it first",
                                 Toast.LENGTH_LONG).show();
                         return;
                     }
@@ -1554,7 +1554,7 @@ public class MainActivity extends Activity
         new AlertDialog.Builder(this)
                 .setTitle("Tambah shortcut")
                 .setView(col)
-                .setPositiveButton("Simpan", (d, w) -> {
+                .setPositiveButton("Save", (d, w) -> {
                     String name = nameIn.getText().toString().trim();
                     String url = urlIn.getText().toString().trim()
                             .replaceFirst("^https?://", "").replaceAll("/$", "");
@@ -1563,7 +1563,7 @@ public class MainActivity extends Activity
                         return;
                     }
                     if (url.isEmpty() || !url.contains(".")) {
-                        Toast.makeText(this, "URL-nya belum valid", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "Invalid URL", Toast.LENGTH_SHORT).show();
                         return;
                     }
                     java.util.List<String[]> l = loadHome();
@@ -1572,7 +1572,7 @@ public class MainActivity extends Activity
                     renderHome();
                     Toast.makeText(this, "Shortcut tersimpan", Toast.LENGTH_SHORT).show();
                 })
-                .setNegativeButton("Batal", null)
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 
@@ -1593,7 +1593,7 @@ public class MainActivity extends Activity
         // Gate 2: Chrome must be running before opening URLs.
         if (!browserUp) {
             updateBrowserDown();
-            Toast.makeText(this, "Chrome belum jalan di laptop — jalankan dulu",
+            Toast.makeText(this, "Chrome isn't running on the laptop — start it first",
                     Toast.LENGTH_LONG).show();
             return;
         }
@@ -1608,7 +1608,7 @@ public class MainActivity extends Activity
                     String u = input.getText().toString().trim();
                     if (!u.isEmpty()) relay.sendTabNew(u);
                 })
-                .setNegativeButton("Batal", null)
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 
@@ -1693,15 +1693,15 @@ public class MainActivity extends Activity
 
     private void askFind() {
         final EditText input = new EditText(this);
-        input.setHint("Cari di halaman…");
+        input.setHint("Search on page…");
         new AlertDialog.Builder(this)
                 .setTitle("Find in page")
                 .setView(input)
-                .setPositiveButton("Cari", (d, w) -> {
+                .setPositiveButton("Search", (d, w) -> {
                     String q = input.getText().toString().trim();
                     if (!q.isEmpty()) relay.sendFind(q);
                 })
-                .setNegativeButton("Batal", null)
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 
@@ -1778,6 +1778,6 @@ public class MainActivity extends Activity
             return;
         }
         relay.sendClipboardSet(text.toString());
-        Toast.makeText(this, "Terkirim ke laptop", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Sent to the laptop", Toast.LENGTH_SHORT).show();
     }
 }

@@ -20,7 +20,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
         android:layout_marginBottom="24dp"
-        android:text="Konek ke panel di laptop"
+        android:text="Connect to the panel on the laptop"
         android:textColor="#9A9A9A"
         android:textSize="14sp" />
 
@@ -46,7 +46,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Kode pairing (6 digit)"
+        android:text="Pairing code (6 digits)"
         android:textColor="#9A9A9A"
         android:textSize="12sp" />
 
@@ -67,7 +67,7 @@
         android:id="@+id/connectBtn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Hubungkan"
+        android:text="Connect"
         android:backgroundTint="#8B72F0"
         android:textColor="#FFFFFF" />
 
@@ -76,7 +76,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:text="Minta Kode Pairing"
+        android:text="Request Pairing Code"
         android:backgroundTint="#2A2A2A"
         android:textColor="#DADADA" />
 
@@ -84,7 +84,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp"
-        android:text="atau scan QR pairing dari panel laptop — aplikasinya kebuka otomatis."
+        android:text="or scan the pairing QR from the laptop panel — the app opens automatically."
         android:textColor="#6B6B6B"
         android:textSize="12sp"
         android:gravity="center" />

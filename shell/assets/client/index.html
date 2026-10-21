@@ -12,6 +12,10 @@
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  /* Fixed body: the tools sheet lives below the fold (translateY) and
+     made the document taller than the viewport, so the page could be
+     scrolled and the remote-screen coordinate mapping drifted. */
+  body { position: fixed; inset: 0; width: 100%; overscroll-behavior: none; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: #000; color: var(--text); font-size: 14px;
@@ -102,7 +106,7 @@
   #fab.open .ico-grid { display: none; }
   #fab.open .ico-close { display: block; stroke: #fff; }
 
-  #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .22s; }
+  #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none; transition: opacity .22s; }
   body.sheet-open #backdrop { opacity: 1; pointer-events: auto; }
 
   /* ===== tools sheet ===== */
@@ -317,15 +321,15 @@
 <div id="latency"><i></i><span id="latencyMs">— ms</span></div>
 
 <div id="browserDown"><div class="bd-card">
-  <div class="bd-title">Chrome belum jalan di laptop</div>
-  <div class="bd-sub">Jalankan langsung dari sini, atau dari panel browser-relay di laptop. Layar di sini nyala sendiri begitu Chrome tersambung.</div>
+  <div class="bd-title">Chrome isn't running on the laptop</div>
+  <div class="bd-sub">Start it from here, or from the browser-relay panel on the laptop. This screen lights up as soon as Chrome connects.</div>
   <button class="bd-launch" id="launchChromeBtn">
     <svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg>
     Launch Chrome
   </button>
 </div></div>
 
-<div id="hint">Webnya fullscreen &amp; bersih.<br>Pegangan kecil di tepi kanan itu tools-nya —<br>klik: muncul tombol bulat, klik lagi: buka tools.<br>Klik layar = tombolnya balik ngumpet.<br>Tahan &amp; geser buat mindahin posisinya.</div>
+<div id="hint">The web view is fullscreen and clean.<br>The small handle on the right edge opens the tools —<br>click: a round button appears, click again: the tools open.<br>Tap the screen = the button hides again.<br>Hold &amp; drag to move its position.</div>
 
 <div id="backdrop"></div>
 
@@ -373,7 +377,7 @@
   <input id="token" type="text" inputmode="numeric" autocomplete="one-time-code"
          maxlength="6" placeholder="••••••" style="display:none">
   <button id="go" class="primary" style="display:none">Connect</button>
-  <button id="reqCode" class="primary" style="display:none">Minta Kode Pairing</button>
+  <button id="reqCode" class="primary" style="display:none">Request Pairing Code</button>
   <div id="authErr"></div>
 </div></div>
 
@@ -396,26 +400,26 @@
   </header>
   <!-- Pairing card (mirip aplikasi native) -->
   <div id="pairCard">
-    <h3>Hubungkan ke PC</h3>
+    <h3>Connect to PC</h3>
     <div class="steps"><span>○ Server</span><i>→</i><span>○ Chrome</span><i>→</i><span>○ Siap</span></div>
     <p class="lbl">Pilih cara pairing:</p>
     <label>Server (host:port)</label>
     <input id="pairHost" placeholder="192.168.1.14:8765" inputmode="url">
     <button id="pairReqBtn" class="primary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      MINTA KODE PAIRING
+      REQUEST PAIRING CODE
     </button>
-    <label>Kode dari panel PC (6 digit)</label>
+    <label>Code from the PC panel (6 digits)</label>
     <input id="pairCode" placeholder="••••••" inputmode="numeric" maxlength="6">
     <button id="pairGoBtn" class="secondary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       HUBUNGKAN
     </button>
-    <p class="hint">atau scan QR dari panel PC — otomatis kebuka</p>
+    <p class="hint">or scan the QR from the PC panel — it opens automatically</p>
   </div>
   <div class="searchbar"><div class="box" id="homeSearch">
     <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-    <span>Cari atau ketik URL…</span>
+    <span>Search or type URL…</span>
   </div></div>
   <div class="section"><h2>Aplikasi</h2></div>
   <div id="homeGrid"></div>
@@ -423,14 +427,14 @@
 
 <div id="homeDlg"><div class="dlg-body">
   <h3>Tambah shortcut</h3>
-  <p>Tersimpan di perangkat ini.</p>
+  <p>Saved on this device.</p>
   <label>Nama</label>
   <input id="homeDlgName" placeholder="cth: Facebook" maxlength="24">
   <label>URL</label>
   <input id="homeDlgUrl" placeholder="cth: facebook.com" inputmode="url">
   <div class="dlg-actions">
-    <button id="homeDlgCancel">Batal</button>
-    <button id="homeDlgOk">Simpan</button>
+    <button id="homeDlgCancel">Cancel</button>
+    <button id="homeDlgOk">Save</button>
   </div>
 </div></div>
 

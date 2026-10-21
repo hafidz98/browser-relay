@@ -17,8 +17,8 @@ import org.json.JSONObject;
 /**
  * Manual server entry + pairing. Two flows:
  * - QR scan (bypasses this screen, handled in MainActivity).
- * - Request-code: enter host, tap "Minta Kode Pairing", read the
- *   single-use code off the PC panel, enter it, tap "Hubungkan".
+ * - Request-code: enter host, tap "Request Pairing Code", read the
+ *   single-use code off the PC panel, enter it, tap "Connect".
  * Fingerprint (br_fingerprint) is the stable device identity.
  */
 public class ConnectActivity extends Activity {
@@ -80,7 +80,7 @@ public class ConnectActivity extends Activity {
             return;
         }
         if (!code.matches("\\d{6}")) {
-            Toast.makeText(this, "Kode harus 6 digit", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "The code must be 6 digits", Toast.LENGTH_SHORT).show();
             return;
         }
         setLoading(true);
@@ -91,7 +91,7 @@ public class ConnectActivity extends Activity {
                 setLoading(false);
                 if (!ok) {
                     Toast.makeText(this,
-                            "Server nggak aksesibel — cek host:port & WiFi",
+                            "Server unreachable — check host:port and WiFi",
                             Toast.LENGTH_LONG).show();
                     return;
                 }
@@ -143,9 +143,9 @@ public class ConnectActivity extends Activity {
                     if ("pair_wait".equals(t)) {
                         runOnUiThread(() -> {
                             pairRequested = true;
-                            requestBtn.setText("Kode diminta ✓");
+                            requestBtn.setText("Code requested");
                             Toast.makeText(ConnectActivity.this,
-                                    "Cek panel di PC — ketik 6 digit kode di bawah, lalu Hubungkan",
+                                    "Check the PC panel — type the 6-digit code below, then connect",
                                     Toast.LENGTH_LONG).show();
                             tokenInput.requestFocus();
                         });
@@ -168,8 +168,8 @@ public class ConnectActivity extends Activity {
     private void onPairError(String msg) {
         runOnUiThread(() -> {
             requestBtn.setEnabled(true);
-            requestBtn.setText("Minta Kode Pairing");
-            Toast.makeText(this, "Gagal minta kode: " + MainActivity.friendlyError(msg),
+            requestBtn.setText("Request Pairing Code");
+            Toast.makeText(this, "Failed to request code: " + MainActivity.friendlyError(msg),
                     Toast.LENGTH_LONG).show();
         });
     }
@@ -190,7 +190,7 @@ public class ConnectActivity extends Activity {
 
     private void setLoading(boolean loading) {
         connectBtn.setEnabled(!loading);
-        connectBtn.setText(loading ? "Menghubungkan…" : "Hubungkan");
+        connectBtn.setText(loading ? "Connecting…" : "Connect");
     }
 
     /** True when something HTTP-ish answers at the relay root. */

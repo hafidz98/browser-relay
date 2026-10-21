@@ -110,17 +110,15 @@ fn find_chrome() -> Option<PathBuf> {
 
 /// True when something answers on the DevTools HTTP endpoint.
 pub fn cdp_up() -> bool {
-    let mut stream = match TcpStream::connect_timeout(
-        &"127.0.0.1:9222".parse().unwrap(),
-        Duration::from_millis(1200),
-    ) {
+    let addr = format!("127.0.0.1:{}", cdp_port());
+    let mut stream = match TcpStream::connect_timeout(&addr.parse().unwrap(), Duration::from_millis(1200)) {
         Ok(s) => s,
         Err(_) => return false,
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(1200)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(1200)));
     if stream
-        .write_all(b"GET /json/version HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        .write_all(format!("GET /json/version HTTP/1.0\r\nHost: {addr}\r\n\r\n").as_bytes())
         .is_err()
     {
         return false;

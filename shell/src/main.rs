@@ -246,11 +246,47 @@ struct TrayIds {
     quit: MenuId,
 }
 
+/// Panel HWND (set once at startup) so tray/sentinel threads can
+/// restore the window WITHOUT going through egui's viewport queue.
+#[cfg(windows)]
+static PANEL_HWND: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" {
+    fn ShowWindow(hwnd: *mut std::ffi::c_void, cmd: i32) -> i32;
+    fn SetForegroundWindow(hwnd: *mut std::ffi::c_void) -> i32;
+    fn BringWindowToTop(hwnd: *mut std::ffi::c_void) -> i32;
+}
+
+/// Restore the panel via Win32 directly. egui's ViewportCommand queue
+/// is only flushed on a redraw, and a hidden window receives none —
+/// so Visible(true) sent from tray/sentinel threads was a silent
+/// no-op and the panel could never be reopened after closing (bug
+/// verified live: sentinel consumed, IsWindowVisible still false).
+#[cfg(windows)]
+fn show_panel_native() {
+    let hwnd = PANEL_HWND.load(std::sync::atomic::Ordering::Relaxed);
+    if hwnd == 0 {
+        return;
+    }
+    const SW_RESTORE: i32 = 9; // show hidden / restore minimized
+    unsafe {
+        ShowWindow(hwnd as *mut std::ffi::c_void, SW_RESTORE);
+        SetForegroundWindow(hwnd as *mut std::ffi::c_void);
+        BringWindowToTop(hwnd as *mut std::ffi::c_void);
+    }
+}
+
+#[cfg(not(windows))]
+fn show_panel_native() {}
+
 /// Re-show the panel window. Safe to call from any thread.
 fn show_panel(ctx: &egui::Context) {
-    // Windows needs the full sequence: un-minimize first, then visible,
-    // then focus. Visible(true) alone often fails to restore a hidden
-    // window (the tray "Open panel" did nothing).
+    // Win32 first: deterministic, independent of the render loop.
+    show_panel_native();
+    // egui commands as a complement (they also fix internal state
+    // like focus/minimize flags once the loop wakes).
     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -260,6 +296,7 @@ fn show_panel(ctx: &egui::Context) {
     let ctx2 = ctx.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(150));
+        show_panel_native();
         ctx2.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx2.send_viewport_cmd(egui::ViewportCommand::Focus);
         ctx2.request_repaint();
@@ -455,7 +492,10 @@ impl App {
             None => CoreState::Down(
                 self.relay_err
                     .clone()
-                    .unwrap_or_else(|| "relay failed to start".into()),
+                    // Default state of manual mode (auto-start off) is
+                    // NOT a failure — the old copy ("relay failed to
+                    // start") blamed the user before any start attempt.
+                    .unwrap_or_else(|| "relay is off — press Start to run it".into()),
             ),
         }
     }
@@ -727,9 +767,16 @@ impl App {
             egui::Stroke::new(1.6, xc),
         );
         if close_resp.clicked() {
-            // Same as the native X: hide to the tray, keep relaying.
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            // Same behavior as the native close path: hide to the tray
+            // when configured, otherwise quit. The custom X always
+            // hid, so the hide_to_tray setting was a lie.
+            if crate::config::get().hide_to_tray {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            } else {
+                self.quitting = true;
+                quit_app();
+            }
         }
         // minimize
         bx -= btn_s + 2.0;
@@ -984,6 +1031,32 @@ impl App {
                     );
                 }
             });
+            // Pending pairing request: the code shown above IS this
+            // requester's code (the dedicated popup was removed in
+            // v0.9.16, leaving no trace of who is asking).
+            if let Some(req) = self.relay.as_ref().and_then(|r| r.pair_request()) {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Pairing request: {} ({}) — that code is for them",
+                            req.name, req.ip
+                        ))
+                        .size(11.5)
+                        .color(ACCENT()),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .small_button(egui::RichText::new("Cancel").size(11.5).color(RED()))
+                            .clicked()
+                        {
+                            if let Some(r) = &self.relay {
+                                r.cancel_pair_request();
+                            }
+                        }
+                    });
+                });
+            }
             ui.add_space(10.0);
             ui.separator();
             ui.add_space(4.0);
@@ -998,7 +1071,7 @@ impl App {
             ui.painter().text(
                 egui::pos2(cdr.min.x + 4.0, cdr.center().y),
                 egui::Align2::LEFT_CENTER,
-                "Connected device",
+                "Connected devices",
                 egui::FontId::proportional(12.5),
                 MUTED(),
             );
@@ -1103,9 +1176,11 @@ impl App {
             .map(|(_, m, w)| (m.as_slice(), *w))
     }
 
-    /// Draw the QR (dark modules on white, 2-module quiet zone) into rect.
+    /// Draw the QR (dark modules on white, 4-module quiet zone per
+    /// the QR spec — 2 modules failed to scan reliably at low light)
+    /// into rect.
     fn draw_qr(painter: &egui::Painter, rect: egui::Rect, modules: &[bool], width: usize) {
-        let total = width + 4;
+        let total = width + 8;
         let cell = (rect.width() / total as f32).floor().max(1.0);
         let side = cell * total as f32;
         let origin = egui::pos2(
@@ -1124,8 +1199,8 @@ impl App {
                     painter.rect_filled(
                         egui::Rect::from_min_size(
                             egui::pos2(
-                                origin.x + (col + 2) as f32 * cell,
-                                origin.y + (row + 2) as f32 * cell,
+                                origin.x + (col + 4) as f32 * cell,
+                                origin.y + (row + 4) as f32 * cell,
                             ),
                             egui::vec2(cell, cell),
                         ),
@@ -1296,10 +1371,10 @@ impl App {
             ui.add_space(8.0);
             ui.checkbox(
                 &mut self.set_hide_to_tray,
-                egui::RichText::new("Tombol X sembunyikan ke tray").size(12.5).color(TEXT()),
+                egui::RichText::new("Hide to tray when clicking X").size(12.5).color(TEXT()),
             );
             ui.label(
-                egui::RichText::new("Default: X menutup aplikasi.")
+                egui::RichText::new("Default: X quits the app.")
                     .size(11.0)
                     .color(FAINT()),
             );
@@ -1345,17 +1420,17 @@ impl App {
             ui.add_space(10.0);
             ui.checkbox(
                 &mut self.set_auto_start_server,
-                egui::RichText::new("Auto-start server saat panel dibuka").size(12.5).color(TEXT()),
+                egui::RichText::new("Auto-start server when the panel opens").size(12.5).color(TEXT()),
             );
             ui.label(
-                egui::RichText::new("Default mati: hindari prompt Windows Firewall tiap buka.")
+                egui::RichText::new("Default off: avoids the Windows Firewall prompt on every launch.")
                     .size(11.0)
                     .color(FAINT()),
             );
             ui.add_space(6.0);
             ui.checkbox(
                 &mut self.set_auto_launch_browser,
-                egui::RichText::new("Auto-launch Chrome saat server jalan").size(12.5).color(TEXT()),
+                egui::RichText::new("Auto-launch Chrome when the server starts").size(12.5).color(TEXT()),
             );
         });
 
@@ -1366,12 +1441,13 @@ impl App {
             .as_ref()
             .and_then(|r| r.hub())
             .map(|h| {
-                let list: Vec<_> = h
-                    .client_list()
-                    .into_iter()
-                    .filter(|c| c.authed)
-                    .collect();
-                (list.len(), list)
+                // Count authed only (label says "connected"), but LIST
+                // every client: the old authed-only filter made the
+                // "pairing…" role branch below dead code — a pending
+                // requester never showed up anywhere on this screen.
+                let list: Vec<_> = h.client_list();
+                let n = list.iter().filter(|c| c.authed).count();
+                (n, list)
             })
             .unwrap_or((0, Vec::new()));
         card().show(ui, |ui| {
@@ -1427,10 +1503,15 @@ impl App {
                 for c in &clients {
                     let ago = ago_str(c.connected_at);
                     let short_id: String = c.fingerprint.chars().take(6).collect();
-                    let title = names
-                        .get(&c.fingerprint)
-                        .map(|n| format!("{n} (#{short_id})"))
-                        .unwrap_or_else(|| format!("#{} · {}", short_id, c.peer));
+                    let title = if c.fingerprint.is_empty() {
+                        // Not yet paired — no fingerprint, no name.
+                        format!("New device · {}", c.peer)
+                    } else {
+                        names
+                            .get(&c.fingerprint)
+                            .map(|n| format!("{n} (#{short_id})"))
+                            .unwrap_or_else(|| format!("#{} · {}", short_id, c.peer))
+                    };
                     ui.horizontal(|ui| {
                         let dot = if c.driver { ACCENT() } else { MUTED() };
                         let (drect, dresp) =
@@ -1467,8 +1548,21 @@ impl App {
 
     /// Validate + persist settings, apply theme live.
     fn save_settings(&mut self, ctx: &egui::Context) {
-        let chrome_port: u16 = self.set_chrome_port.trim().parse().unwrap_or(9222);
-        let relay_port: u16 = self.set_relay_port.trim().parse().unwrap_or(8765);
+        let mut port_errs: Vec<String> = Vec::new();
+        let chrome_port: u16 = match self.set_chrome_port.trim().parse() {
+            Ok(p) if p > 0 => p,
+            _ => {
+                port_errs.push("DevTools port invalid — kept 9222".to_string());
+                9222
+            }
+        };
+        let relay_port: u16 = match self.set_relay_port.trim().parse() {
+            Ok(p) if p > 0 => p,
+            _ => {
+                port_errs.push("Listen port invalid — kept 8765".to_string());
+                8765
+            }
+        };
         let chrome_path = self.set_chrome_path.trim().to_string();
         let theme = if self.set_theme == "light" {
             "light".to_string()
@@ -1491,7 +1585,14 @@ impl App {
             c.auto_launch_browser = self.set_auto_launch_browser;
         });
         apply_theme(ctx);
-        self.toast("Settings saved. Restart the server to apply network changes.".to_string());
+        // Surface invalid inputs instead of silently swapping in the
+        // default (the old code kept "Settings saved." while quietly
+        // reverting a typo'd port).
+        if port_errs.is_empty() {
+            self.toast("Settings saved. Restart the server to apply network changes.");
+        } else {
+            self.toast(format!("{} — other settings saved.", port_errs.join("; ")));
+        }
     }
 
     /// Small QR icon button (opens the in-panel QR popup).
@@ -1673,7 +1774,7 @@ impl App {
         painter.text(
             egui::pos2(cx, y),
             egui::Align2::CENTER_TOP,
-            "Perangkat meminta pairing",
+            "Device requests pairing",
             egui::FontId::proportional(15.0),
             TEXT(),
         );
@@ -1698,7 +1799,7 @@ impl App {
         painter.text(
             egui::pos2(cx, y),
             egui::Align2::CENTER_TOP,
-            "Ketik kode ini di perangkat.\nKode sekali pakai, hangus dalam 5 menit.",
+            "Type this code on the device.\nSingle-use code — it expires in 5 minutes.",
             egui::FontId::proportional(11.5),
             FAINT(),
         );
@@ -1712,7 +1813,7 @@ impl App {
         painter.text(
             btn.center(),
             egui::Align2::CENTER_CENTER,
-            "Batalkan",
+            "Cancel",
             egui::FontId::proportional(13.0),
             TEXT(),
         );
@@ -1722,7 +1823,7 @@ impl App {
             }
         } else if scrim.clicked() {
             // Clicking outside does NOT dismiss — the code is sensitive.
-            // Only Batalkan or Escape.
+            // Only Cancel or Escape.
         }
     }
 
@@ -1764,7 +1865,7 @@ impl App {
         painter.text(
             egui::pos2(card.center().x, card.min.y + 16.0),
             egui::Align2::CENTER_TOP,
-            "Perangkat",
+            "Devices",
             egui::FontId::proportional(15.0),
             TEXT(),
         );
@@ -1801,7 +1902,7 @@ impl App {
             painter.text(
                 list.center(),
                 egui::Align2::CENTER_CENTER,
-                "Belum ada perangkat terpair.",
+                "No paired devices yet.",
                 egui::FontId::proportional(12.0),
                 FAINT(),
             );
@@ -1851,7 +1952,7 @@ impl App {
                 painter.text(
                     br.center(),
                     egui::Align2::CENTER_CENTER,
-                    "Cabut",
+                    "Revoke",
                     egui::FontId::proportional(11.0),
                     RED(),
                 );
@@ -1863,7 +1964,7 @@ impl App {
             if let Some(fp) = revoke {
                 if let Some(r) = &self.relay {
                     if r.revoke_device(&fp) {
-                        self.toast("Perangkat dicabut.".to_string());
+                        self.toast("Device revoked.".to_string());
                     }
                 }
             }
@@ -1881,7 +1982,9 @@ impl App {
         }
         let msg = msg.clone();
         egui::Area::new(egui::Id::new("toast"))
-            .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -24.0))
+            // Top, below the title bar: the old bottom anchor sat ON
+            // the footer hint text (overlapping layers, both visible).
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 46.0))
             .show(ctx, |ui| {
                 egui::Frame::new()
                     .fill(RAISED())
@@ -2006,6 +2109,8 @@ fn main() -> eframe::Result<()> {
                     {
                         let hwnd = w.hwnd.get() as usize;
                         app.hwnd = hwnd;
+                        #[cfg(windows)]
+                        PANEL_HWND.store(hwnd, std::sync::atomic::Ordering::Relaxed);
                         dwm_round_corners(hwnd as *mut std::ffi::c_void);
                     }
                 }

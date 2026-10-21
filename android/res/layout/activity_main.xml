@@ -25,7 +25,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Chrome belum jalan di laptop"
+            android:text="Chrome isn't running on the laptop"
             android:textColor="#DADADA"
             android:textSize="17sp"
             android:textStyle="bold"
@@ -35,7 +35,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Jalankan langsung dari sini — halamannya akan muncul begitu Chrome tersambung."
+            android:text="Start it from here — the screen appears as soon as Chrome connects."
             android:textColor="#9A9A9A"
             android:textSize="13sp"
             android:gravity="center" />
@@ -93,7 +93,7 @@
         android:maxWidth="250dp"
         android:padding="9dp"
         android:background="@drawable/hint_bg"
-        android:text="Webnya fullscreen &amp; bersih.\nPegangan kecil di tepi itu tools-nya — tap: muncul tombol bulat, tap lagi: buka tools.\nTap layar = tombolnya balik ngumpet.\nTahan &amp; geser buat mindahin posisinya."
+        android:text="The web view is fullscreen and clean.\nThe small handle on the right edge opens the tools — tap: a round button appears, tap again: the tools open.\nTap the screen = the button hides again.\nHold &amp; drag to move its position."
         android:textColor="#EBFFFFFF"
         android:textSize="12sp"
         android:lineSpacingExtra="2dp"
