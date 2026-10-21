@@ -47,7 +47,7 @@ pub struct ScreencastOpts {
 
 impl Default for ScreencastOpts {
     fn default() -> Self {
-        ScreencastOpts { quality: 75, max_w: 1280, max_h: 1700, every_nth: 1 }
+        ScreencastOpts { quality: 85, max_w: 2048, max_h: 2048, every_nth: 1 }
     }
 }
 
@@ -59,6 +59,14 @@ struct BState {
     mobile_h: u32,
     /// Device scale factor for coordinate mapping (2 when mobile emulation on).
     dsf: f64,
+    /// The layout viewport of the page we drive, in CSS pixels. Read
+    /// back from the page itself, because the emulation is not always
+    /// what the browser ends up using.
+    page_w: f64,
+    page_h: f64,
+    /// The size of the screencast frame we send, in CSS pixels (DIP).
+    frame_w: f64,
+    frame_h: f64,
     orig_ua: String,
     last_tabs: Vec<PageTarget>,
 }
@@ -95,6 +103,10 @@ impl Browser {
                 mobile_w: 390,
                 mobile_h: 844,
                 dsf: 1.0,
+                page_w: 0.0,
+                page_h: 0.0,
+                frame_w: 0.0,
+                frame_h: 0.0,
                 orig_ua: String::new(),
                 last_tabs: Vec::new(),
             }),
@@ -309,6 +321,8 @@ impl Browser {
         if let Err(e) = cdp.call("Page.enable", nop()).await {
             rlog!("Page.enable: {e}");
         }
+        // The page may already be laid out: read its real size.
+        self.read_page_size(&cdp).await;
         if mobile {
             let (w, h) = {
                 let st = self.state.lock().unwrap();
@@ -351,6 +365,16 @@ impl Browser {
                 let Some(data) = params.get("data").and_then(|d| d.as_str()) else {
                     return;
                 };
+                // The frame tells us how big the page it shows is.
+                if let Some(meta) = params.get("metadata") {
+                    let w = meta.get("deviceWidth").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let h = meta.get("deviceHeight").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    if w > 0.0 && h > 0.0 {
+                        let mut st = self.state.lock().unwrap();
+                        st.frame_w = w;
+                        st.frame_h = h;
+                    }
+                }
                 let data = data.to_string();
                 let session = params.get("sessionId").cloned().unwrap_or(Value::Null);
                 let cdp = self.state.lock().unwrap().cdp.clone();
@@ -366,6 +390,11 @@ impl Browser {
                 self.hub.broadcast_frame(&data);
             }
             "Page.loadEventFired" => {
+                // A new page: its size can be different.
+                if let Some(cdp) = self.state.lock().unwrap().cdp.clone() {
+                    let b2 = self.clone();
+                    tokio::spawn(async move { b2.read_page_size(&cdp).await; });
+                }
                 let b = self.clone();
                 tokio::spawn(async move {
                     b.push_tabs().await;
@@ -411,6 +440,63 @@ impl Browser {
 
     // ---- input ----
 
+    /// Read the real layout size of the page we drive.
+    ///
+    /// The emulation we ask for is not always what the browser ends
+    /// up using (a window that cannot shrink, a page that overrides
+    /// the viewport). The page itself is the only trustworthy source.
+    async fn read_page_size(&self, cdp: &Arc<Cdp>) {
+        let Ok(res) = cdp
+            .call(
+                "Runtime.evaluate",
+                json!({"expression": "[window.innerWidth, window.innerHeight]", "returnByValue": true}),
+            )
+            .await
+        else {
+            return;
+        };
+        let Some(v) = res
+            .get("result")
+            .and_then(|r| r.get("value"))
+            .and_then(|v| v.as_array())
+        else {
+            return;
+        };
+        let w = v.first().and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let h = v.get(1).and_then(|x| x.as_f64()).unwrap_or(0.0);
+        if w > 0.0 && h > 0.0 {
+            let mut st = self.state.lock().unwrap();
+            st.page_w = w;
+            st.page_h = h;
+        }
+    }
+
+    /// Frame pixels -> CSS pixels of the page.
+    ///
+    /// The client sends the position inside the image it shows, which
+    /// is the screencast frame. That frame is not always the size of
+    /// the page the browser laid out: a window bigger than the
+    /// emulated viewport shows the page scaled up. Dividing by the
+    /// device pixel factor alone then puts every click the wrong
+    /// place, so the real page size and the real frame size are used.
+    fn to_css(&self, x: f64, y: f64) -> (f64, f64) {
+        let st = self.state.lock().unwrap();
+        let (page_w, page_h) = (st.page_w, st.page_h);
+        let (frame_w, frame_h) = (st.frame_w, st.frame_h);
+        let dsf = st.dsf;
+        // The frame is the page in device pixels, capped by the
+        // screencast limits.
+        let px_w = if frame_w > 0.0 { (frame_w * dsf).min(self.sc.max_w as f64) } else { 0.0 };
+        let px_h = if frame_h > 0.0 { (frame_h * dsf).min(self.sc.max_h as f64) } else { 0.0 };
+        if page_w > 0.0 && px_w > 0.0 {
+            (x * page_w / px_w, y * page_h / px_h)
+        } else if dsf > 0.0 {
+            (x / dsf, y / dsf)
+        } else {
+            (x, y)
+        }
+    }
+
     pub async fn mouse(&self, action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
         let t = match action {
             "move" => "mouseMoved",
@@ -419,21 +505,21 @@ impl Browser {
             _ => return Err(format!("bad mouse action {action:?}")),
         };
         let button = if ["left", "middle", "right"].contains(&button) { button } else { "left" };
-        // Client sends frame pixels; CDP expects CSS pixels (divide by DSF).
-        let dsf = self.state.lock().unwrap().dsf;
+        // Client sends frame pixels; CDP expects the page's CSS pixels.
+        let (cx, cy) = self.to_css(x, y);
         self.call(
             "Input.dispatchMouseEvent",
-            json!({"type": t, "x": x / dsf, "y": y / dsf, "button": button, "clickCount": 1}),
+            json!({"type": t, "x": cx, "y": cy, "button": button, "clickCount": 1}),
         )
         .await?;
         Ok(())
     }
 
     pub async fn wheel(&self, x: f64, y: f64, dx: f64, dy: f64) -> Result<(), String> {
-        let dsf = self.state.lock().unwrap().dsf;
+        let (cx, cy) = self.to_css(x, y);
         self.call(
             "Input.dispatchMouseEvent",
-            json!({"type": "mouseWheel", "x": x / dsf, "y": y / dsf, "deltaX": dx, "deltaY": dy}),
+            json!({"type": "mouseWheel", "x": cx, "y": cy, "deltaX": dx, "deltaY": dy}),
         )
         .await?;
         Ok(())
@@ -680,6 +766,7 @@ impl Browser {
             json!({"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": false}),
         )
         .await?;
+        self.read_page_size(&cdp).await;
         Ok(())
     }
 
@@ -719,6 +806,7 @@ impl Browser {
             json!({"width": w, "height": h, "deviceScaleFactor": 1, "mobile": false}),
         )
         .await?;
+        self.read_page_size(&cdp).await;
         cdp.call("Emulation.setTouchEmulationEnabled", json!({"enabled": false}))
             .await?;
         let ua = self.state.lock().unwrap().orig_ua.clone();
