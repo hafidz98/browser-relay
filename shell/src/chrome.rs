@@ -451,3 +451,42 @@ pub fn wake_chrome() -> Result<(), String> {
     #[cfg(not(windows))]
     Err("not supported on this platform".into())
 }
+
+/// Do the flags that keep the screen alive exist on the running
+/// Chrome?
+///
+/// `--disable-backgrounding-occluded-windows` and
+/// `--disable-renderer-backgrounding` are what keep Chrome painting
+/// while another window covers it. They only work when Chrome is
+/// started with them, so a Chrome that was already running (started
+/// by an older build, or by hand) can freeze the screencast. None =
+/// no Chrome to look at.
+pub fn chrome_has_relay_flags() -> Option<bool> {
+    let port = cdp_port();
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | \
+         Where-Object {{ $_.CommandLine -like '*--remote-debugging-port={}*' }} | \
+         Select-Object -First 1 -ExpandProperty CommandLine",
+        port
+    );
+    let out = sys_cmd("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    if text.trim().is_empty() {
+        return None;
+    }
+    Some(
+        text.contains("--disable-backgrounding-occluded-windows")
+            && text.contains("--disable-renderer-backgrounding"),
+    )
+}
+
+/// Close Chrome and start it again - this time with the flags that
+/// keep the screen alive.
+pub fn restart_chrome() -> Result<(), String> {
+    let _ = close_chrome();
+    std::thread::sleep(Duration::from_millis(800));
+    launch_chrome()
+}

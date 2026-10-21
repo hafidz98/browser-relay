@@ -194,12 +194,36 @@ var qrScanned = false;
     bar.style.display = on ? "flex" : "none";
     var btn = document.getElementById("wakeChrome");
     if (btn) btn.style.display = isDriver ? "block" : "none";
+    placeBars();
+  }
+  // ---- Chrome runs without the flags that keep it painting ----
+  function setFlagsOk(ok) {
+    var bar = document.getElementById("flagsBar");
+    if (!bar) return;
+    bar.style.display = (ok === false) ? "flex" : "none";
+    var btn = document.getElementById("restartChrome");
+    if (btn) btn.style.display = isDriver ? "block" : "none";
+    placeBars();
+  }
+  // The two bars share one spot: stack them when both are up.
+  function placeBars() {
+    var flags = document.getElementById("flagsBar");
+    var paused = document.getElementById("pausedBar");
+    var top = (flags && flags.style.display === "flex") ? 92 : 46;
+    if (paused) paused.style.top = top + "px";
   }
   var wakeBtn = document.getElementById("wakeChrome");
   if (wakeBtn) {
     wakeBtn.onclick = function () {
       send({ type: "chrome", action: "wake" });
       toast("Bringing Chrome to the front");
+    };
+  }
+  var restartBtn = document.getElementById("restartChrome");
+  if (restartBtn) {
+    restartBtn.onclick = function () {
+      send({ type: "chrome", action: "restart" });
+      toast("Restarting Chrome with the right flags");
     };
   }
 
@@ -417,6 +441,7 @@ var qrScanned = false;
           }
           if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
           if (m.paused !== undefined) setPaused(!!m.paused);
+          if (m.flagsOk !== undefined) setFlagsOk(m.flagsOk);
           updateSteps();
           // A QR scan means "show me the screen" - go straight there.
           if (qrScanned) { qrScanned = false; closeHome(); }
@@ -440,6 +465,8 @@ var qrScanned = false;
           setChromeRunning(m.browserUp);
           showBrowserDown(!m.browserUp);
           if (m.browserUp) sendViewport();
+          if (m.flagsOk !== undefined) setFlagsOk(m.flagsOk);
+          if (m.paused !== undefined) setPaused(!!m.paused);
           break;
         case "pong":
           if (m.t) setLatency(Date.now() - m.t);

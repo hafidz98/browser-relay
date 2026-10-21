@@ -323,6 +323,12 @@ impl Browser {
         }
         // The page may already be laid out: read its real size.
         self.read_page_size(&cdp).await;
+        // Chrome without the anti-backgrounding flags stops painting
+        // when another window covers it: the screen would freeze.
+        let flags = crate::chrome::chrome_has_relay_flags();
+        if self.hub.set_flags_ok(flags) {
+            self.hub.broadcast_status();
+        }
         if mobile {
             let (w, h) = {
                 let st = self.state.lock().unwrap();

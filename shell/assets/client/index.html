@@ -63,7 +63,14 @@
     padding: 7px 8px 7px 13px; border-radius: 999px; font-size: 12px; white-space: nowrap;
     box-shadow: 0 8px 24px rgba(0,0,0,.4);
   }
-  #pausedBar button {
+  #flagsBar {
+    position: absolute; top: max(46px, calc(env(safe-area-inset-top) + 46px)); left: 50%;
+    transform: translateX(-50%); z-index: 6; display: flex; align-items: center; gap: 10px;
+    background: var(--chip); color: var(--text); border: 1px solid var(--border);
+    padding: 7px 8px 7px 13px; border-radius: 999px; font-size: 12px; white-space: nowrap;
+    box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  }
+  #flagsBar button, #pausedBar button {
     border: 0; background: var(--accent); color: #fff; border-radius: 999px;
     padding: 7px 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
   }
@@ -638,6 +645,10 @@
 <div id="pausedBar" style="display:none">
   <span>Chrome is in the background - the screen is frozen</span>
   <button id="wakeChrome">Bring it to the front</button>
+</div>
+<div id="flagsBar" style="display:none">
+  <span>Chrome is running without the relay flags - the screen can freeze</span>
+  <button id="restartChrome">Restart Chrome</button>
 </div>
 
 <div id="browserDown"><div class="bd-card">

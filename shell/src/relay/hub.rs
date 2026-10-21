@@ -69,6 +69,9 @@ struct HubState {
     clients: HashMap<u64, ClientState>,
     /// The page is not in the foreground: the screencast is frozen.
     paused: bool,
+    /// Whether the running Chrome was started with the flags that keep
+    /// the screen alive (None: no Chrome to judge).
+    flags_ok: Option<bool>,
     driver: Option<u64>,
     seq: u64,
 }
@@ -91,6 +94,7 @@ impl Hub {
             state: Mutex::new(HubState {
                 clients: HashMap::new(),
                 paused: false,
+                flags_ok: None,
                 driver: None,
                 seq: 0,
             }),
@@ -119,6 +123,17 @@ impl Hub {
             != up
     }
 
+    /// Remember whether the running Chrome has the flags that keep the
+    /// screen alive.
+    pub fn set_flags_ok(&self, ok: Option<bool>) -> bool {
+        let mut st = self.state.lock().unwrap();
+        if st.flags_ok == ok {
+            return false;
+        }
+        st.flags_ok = ok;
+        true
+    }
+
     /// The page is not in the foreground (minimized or covered): the
     /// screencast is frozen, so the client shows what it has.
     pub fn set_paused(&self, paused: bool) -> bool {
@@ -143,7 +158,13 @@ impl Hub {
 
     /// Tell every authed client the browser went up or down.
     pub fn broadcast_status(&self) {
-        let msg = json!({"type": "status", "browserUp": self.browser_up()}).to_string();
+        let msg = json!({
+            "type": "status",
+            "browserUp": self.browser_up(),
+            "paused": self.state.lock().unwrap().paused,
+            "flagsOk": self.state.lock().unwrap().flags_ok,
+        })
+        .to_string();
         let st = self.state.lock().unwrap();
         for c in st.clients.values() {
             if c.authed && c.send.try_send(OutMsg::Text(msg.clone())).is_ok() {
@@ -527,7 +548,8 @@ impl Hub {
             self.send_json(id, json!({
                 "type": "welcome", "driver": is_driver, "mobile": mobile,
                 "browserUp": self.browser_up(),
-                "paused": self.state.lock().unwrap().paused, "paired": true,
+                "paused": self.state.lock().unwrap().paused,
+                "flagsOk": self.state.lock().unwrap().flags_ok, "paired": true,
                 // Which PC this is (the client shows it, so the phone
                 // can tell what it is driving).
                 "host": crate::chrome::host_name(),
@@ -603,10 +625,25 @@ impl Hub {
             // dedicated Chrome from the phone. Driver-only.
             "chrome" => {
                 let action = m.action.as_str();
+                if action == "restart" {
+                    // Closing and starting Chrome takes seconds: do it
+                    // off the async runtime.
+                    let res = tokio::task::spawn_blocking(chrome::restart_chrome).await;
+                    match res {
+                        Ok(Ok(())) => {
+                            rlog!("client #{id} chrome restart");
+                            self.send_json(id, json!({"type": "chrome", "action": action}));
+                        }
+                        Ok(Err(e)) => self.send_err(id, &format!("chrome {action} failed: {e}")),
+                        Err(e) => self.send_err(id, &format!("chrome {action} failed: {e}")),
+                    }
+                    return;
+                }
                 let res = match action {
                     "launch" => chrome::launch_chrome(),
                     "close" => chrome::close_chrome(),
                     "wake" => chrome::wake_chrome(),
+                    "restart" => chrome::restart_chrome(),
                     _ => {
                         self.send_err(id, "bad chrome action");
                         return;
