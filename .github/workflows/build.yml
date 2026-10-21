@@ -55,6 +55,26 @@ jobs:
       - name: Check web client script
         run: node --check shell/assets/client/app.js
 
+  # The GUI binary (src/main.rs) needs the eframe/tray-icon feature
+  # set, which the Linux ci job drops (--no-default-features). Compile
+  # it on Windows on every push so panel code is never verified only
+  # at release time.
+  gui-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell
+
+      - name: Check (GUI)
+        run: cargo check
+        working-directory: shell
+
   windows-exe:
     # Tag push builds the release binary; manual dispatch builds it
     # from any branch so the pipeline can be tested without a tag.

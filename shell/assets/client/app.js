@@ -89,7 +89,10 @@
     ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46, Home: 36,
     End: 35, PageUp: 33, PageDown: 34 };
 
-  function setStatus(s) { status.textContent = s; }
+  function setStatus(s, cls) {
+    status.textContent = s;
+    status.className = cls || "";
+  }
 
   var browserDownEl = document.getElementById("browserDown");
   var browserUp = false;
@@ -151,6 +154,7 @@
   function setLatency(ms) {
     latencyMs.textContent = ms + " ms";
     latencyEl.className = ms < 300 ? "" : ms < 900 ? "warn" : "bad";
+    latencyEl.title = "Round-trip latency to the PC";
   }
 
   function connect() {
@@ -181,7 +185,7 @@
           authErr.textContent = "";
           goBtn.disabled = false;
           goBtn.textContent = "Connect";
-          setStatus(isDriver ? "Driving Chrome" : "View only");
+          setStatus(isDriver ? "Driving Chrome" : "View only", isDriver ? "live" : "view");
           // Which PC are we driving? (the relay sends the host name)
           if (m.host) {
             peer.innerHTML = '<i></i>Paired to <b>' + m.host + "</b>";
@@ -208,7 +212,7 @@
           break;
         case "role":
           isDriver = !!m.driver;
-          setStatus(isDriver ? "Driving Chrome" : "View only");
+          setStatus(isDriver ? "Driving Chrome" : "View only", isDriver ? "live" : "view");
           break;
         case "frame":
           img.src = "data:image/jpeg;base64," + m.data;
@@ -299,6 +303,7 @@
       });
     };
     tabsEl.appendChild(nb);
+    window.__activeUrl = activeUrl;
     if (activeUrl && activeUrl !== "—") {
       urlText.textContent = activeUrl;
       urlText.classList.remove("ph");
@@ -508,6 +513,23 @@
   });
   armIdle();
   document.getElementById("sheetClose").onclick = function () { toggleSheet(false); };
+  // Drag the grip down to dismiss - the grip looks draggable, so it
+  // should be.
+  (function () {
+    var grip = document.querySelector("#toolsheet .grip");
+    if (!grip) return;
+    var startY = 0, dragging = false;
+    grip.addEventListener("pointerdown", function (e) {
+      startY = e.clientY; dragging = true;
+      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    grip.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      if (e.clientY - startY > 70) { dragging = false; toggleSheet(false); }
+    });
+    grip.addEventListener("pointerup", function () { dragging = false; });
+    grip.addEventListener("pointercancel", function () { dragging = false; });
+  })();
   document.getElementById("backdrop").onclick = function () {
     // Ignore the synthetic click that follows the pointerup which opened
     // the sheet — otherwise the sheet flashes open then immediately closes.
@@ -526,6 +548,18 @@
   };
   document.getElementById("reloadBtn").onclick = function () {
     send({ type: "tab", action: "reload" });
+  };
+  document.getElementById("copyBtn").onclick = function () {
+    var link = window.__activeUrl || "";
+    if (!link || link === "—") { toast("No page to copy yet"); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(
+        function () { toast("Link copied"); },
+        function () { toast("Could not copy the link"); }
+      );
+    } else {
+      toast("Clipboard not available here");
+    }
   };
 
   var desktopBtn = document.querySelector('[data-act="desktop"]');

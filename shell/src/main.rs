@@ -6,6 +6,7 @@
 
 mod chrome;
 mod config;
+mod firewall;
 pub mod relay;
 
 use std::fs;
@@ -59,6 +60,15 @@ fn ACCENT() -> egui::Color32 {
 fn GREEN() -> egui::Color32 {
     if light() { egui::Color32::from_rgb(0x2d, 0x8a, 0x3e) } else { egui::Color32::from_rgb(0x3f, 0xb9, 0x50) }
 }
+/// Warning color (firewall notice).
+fn AMBER() -> egui::Color32 {
+    if light() {
+        egui::Color32::from_rgb(0xb7, 0x79, 0x1f)
+    } else {
+        egui::Color32::from_rgb(0xe3, 0xb3, 0x41)
+    }
+}
+
 fn RED() -> egui::Color32 {
     if light() { egui::Color32::from_rgb(0xd3, 0x2f, 0x2f) } else { egui::Color32::from_rgb(0xe5, 0x53, 0x4b) }
 }
@@ -194,6 +204,13 @@ fn dwm_round_corners(hwnd: *mut std::ffi::c_void) {
     }
 }
 
+/// Result of a firewall probe or rule change, delivered from the
+/// background thread that runs PowerShell.
+enum FwUpdate {
+    Verdict(firewall::Verdict),
+    RuleAdded(bool),
+}
+
 struct App {
     relay: Option<RelayHandle>,
     relay_err: Option<String>,
@@ -224,8 +241,11 @@ struct App {
     _instance_lock: Option<TcpListener>,
     /// Settings view toggle.
     show_settings: bool,
-    /// Paired-clients popup toggle.
-    show_clients: bool,
+    /// Windows Firewall verdict for this binary (None = not checked).
+    fw_verdict: Option<firewall::Verdict>,
+    /// Firewall probe results (PowerShell runs on a worker thread).
+    fw_rx: Receiver<FwUpdate>,
+    fw_tx: Sender<FwUpdate>,
     /// Last theme applied to egui visuals (re-apply on change).
     applied_theme: String,    /// Settings edit buffers (loaded from config when opening).
     set_chrome_path: String,
@@ -430,7 +450,8 @@ impl App {
         };
         let (tray, tray_ids) = build_tray();
         let (action_tx, action_rx) = channel();
-        App {
+        let (fw_tx, fw_rx) = channel();
+        let mut app = App {
             relay,
             relay_err,
             rt,
@@ -454,7 +475,9 @@ impl App {
             #[cfg(windows)]
             region_applied: None,
             show_settings: false,
-            show_clients: false,
+            fw_verdict: None,
+            fw_rx,
+            fw_tx,
             set_chrome_path: String::new(),
             set_theme: String::new(),
             set_chrome_port: String::new(),
@@ -464,7 +487,11 @@ impl App {
             set_auto_start_server: false,
             set_auto_launch_browser: false,
             applied_theme: String::new(),
-        }
+        };
+        // Check the firewall once at startup so the banner is there
+        // before the user hits Start (and after a manual start).
+        app.probe_firewall();
+        app
     }
 
     fn toast(&mut self, msg: impl Into<String>) {
@@ -514,6 +541,8 @@ impl App {
                 self.relay = Some(h);
                 self.relay_err = None;
                 self.toast("Server running".to_string());
+                // Check whether the phone can actually reach us.
+                self.probe_firewall();
                 // Auto-launch Chrome when configured.
                 if crate::config::get().auto_launch_browser {
                     self.run_action(UiAction::LaunchChrome);
@@ -524,6 +553,29 @@ impl App {
                 self.toast(format!("Failed to start relay: {e}"));
             }
         }
+    }
+
+    /// Probe the Windows Firewall in the background: the check shells
+    /// out to PowerShell, which takes a second or two and must not
+    /// block the UI thread.
+    fn probe_firewall(&mut self) {
+        let tx = self.fw_tx.clone();
+        std::thread::spawn(move || {
+            let exe = std::env::current_exe().unwrap_or_default();
+            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe)));
+        });
+    }
+
+    /// Ask Windows for an inbound allow rule (shows the elevation
+    /// prompt), then re-probe so the banner disappears if it worked.
+    fn request_firewall_rule(&mut self) {
+        let tx = self.fw_tx.clone();
+        std::thread::spawn(move || {
+            let exe = std::env::current_exe().unwrap_or_default();
+            let added = firewall::add_allow_rule(&exe);
+            let _ = tx.send(FwUpdate::RuleAdded(added));
+            let _ = tx.send(FwUpdate::Verdict(firewall::probe(&exe)));
+        });
     }
 
     fn stop_relay(&mut self) {
@@ -547,6 +599,18 @@ impl App {
             match r {
                 Ok(msg) => self.toast(msg),
                 Err(e) => self.toast(e),
+            }
+        }
+        while let Ok(msg) = self.fw_rx.try_recv() {
+            match msg {
+                FwUpdate::Verdict(v) => self.fw_verdict = Some(v),
+                FwUpdate::RuleAdded(ok) => {
+                    self.toast(if ok {
+                        "Firewall rule added - allow the app if Windows asks.".to_string()
+                    } else {
+                        "Could not add the firewall rule.".to_string()
+                    });
+                }
             }
         }
     }
@@ -895,6 +959,44 @@ impl App {
                     }
                 });
             });
+            // A3: the server binds fine even when Windows Firewall
+            // blocks inbound traffic, so "Server running" used to be
+            // a lie when the user declined the prompt.
+            if running && self.fw_verdict == Some(firewall::Verdict::Blocked) {
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Windows Firewall is blocking incoming connections")
+                        .size(12.0)
+                        .color(AMBER()),
+                );
+                ui.label(
+                    egui::RichText::new(
+                        "Your phone cannot reach this PC until the relay is allowed through the firewall.",
+                    )
+                    .size(11.0)
+                    .color(FAINT()),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .small_button(egui::RichText::new("Allow relay").size(11.5).color(AMBER()))
+                        .clicked()
+                    {
+                        self.request_firewall_rule();
+                    }
+                    if ui
+                        .small_button(egui::RichText::new("Firewall settings").size(11.5).color(MUTED()))
+                        .clicked()
+                    {
+                        firewall::open_settings();
+                    }
+                    if ui
+                        .small_button(egui::RichText::new("Re-check").size(11.5).color(MUTED()))
+                        .clicked()
+                    {
+                        self.probe_firewall();
+                    }
+                });
+            }
         });
         ui.add_space(4.0);
     }
@@ -1096,6 +1198,64 @@ impl App {
             if cdresp.clicked() {
                 self.devices_popup = true;
             }
+
+            // Live sessions, inline: this used to live at the bottom
+            // of the Settings page, where a 624px window put it past
+            // the fold. Device state is live information, not a
+            // preference.
+            let sessions: Vec<_> = self
+                .relay
+                .as_ref()
+                .and_then(|r| r.hub())
+                .map(|h| h.client_list())
+                .unwrap_or_default();
+            if !sessions.is_empty() {
+                // Names of paired devices, for a friendlier label.
+                let names: std::collections::HashMap<String, String> = self
+                    .relay
+                    .as_ref()
+                    .map(|r| {
+                        r.paired_devices()
+                            .into_iter()
+                            .map(|(fp, d)| (fp, d.name))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ui.add_space(6.0);
+                for c in &sessions {
+                    let short_id: String = c.fingerprint.chars().take(6).collect();
+                    let title = if c.fingerprint.is_empty() {
+                        format!("New device · {}", c.peer)
+                    } else {
+                        names
+                            .get(&c.fingerprint)
+                            .cloned()
+                            .unwrap_or_else(|| format!("#{} · {}", short_id, c.peer))
+                    };
+                    let role = if c.driver {
+                        "driver"
+                    } else if c.authed {
+                        "viewer"
+                    } else {
+                        "pairing…"
+                    };
+                    let ago = ago_str(c.connected_at);
+                    ui.horizontal(|ui| {
+                        let (dot, _) =
+                            ui.allocate_exact_size(egui::vec2(10.0, 16.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(dot.center(), 4.0, if c.driver { ACCENT() } else { MUTED() });
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new(title).size(12.0).color(TEXT()));
+                            ui.label(
+                                egui::RichText::new(format!("{role} · {ago}"))
+                                    .size(10.5)
+                                    .color(FAINT()),
+                            );
+                        });
+                    });
+                }
+            }
         });
     }
 
@@ -1251,7 +1411,6 @@ impl App {
             );
             if bresp.clicked() {
                 self.show_settings = false;
-                self.show_clients = false;
             }
             // Title centered.
             ui.with_layout(
@@ -1445,116 +1604,6 @@ impl App {
             );
         });
 
-        // ---- CONNECTED PHONES ----
-        Self::section_label(ui, "CONNECTED PHONES");
-        let (n, clients) = self
-            .relay
-            .as_ref()
-            .and_then(|r| r.hub())
-            .map(|h| {
-                // Count authed only (label says "connected"), but LIST
-                // every client: the old authed-only filter made the
-                // "pairing…" role branch below dead code — a pending
-                // requester never showed up anywhere on this screen.
-                let list: Vec<_> = h.client_list();
-                let n = list.iter().filter(|c| c.authed).count();
-                (n, list)
-            })
-            .unwrap_or((0, Vec::new()));
-        card().show(ui, |ui| {
-            force_full_width(ui);
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("{n} connected"))
-                        .size(12.5)
-                        .color(TEXT()),
-                );
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        if ui
-                            .small_button(
-                                egui::RichText::new(if self.show_clients {
-                                    "Hide"
-                                } else {
-                                    "Details"
-                                })
-                                .size(11.5)
-                                .color(ACCENT()),
-                            )
-                            .clicked()
-                        {
-                            self.show_clients = !self.show_clients;
-                        }
-                    },
-                );
-            });
-            if self.show_clients {
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(8.0);
-                if clients.is_empty() {
-                    ui.label(
-                        egui::RichText::new("No devices connected.")
-                            .size(12.0)
-                            .color(FAINT()),
-                    );
-                }
-                // Device names by fingerprint (for the ID display).
-                let names: std::collections::HashMap<String, String> = self
-                    .relay
-                    .as_ref()
-                    .map(|r| {
-                        r.paired_devices()
-                            .into_iter()
-                            .map(|(fp, d)| (fp, d.name))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                for c in &clients {
-                    let ago = ago_str(c.connected_at);
-                    let short_id: String = c.fingerprint.chars().take(6).collect();
-                    let title = if c.fingerprint.is_empty() {
-                        // Not yet paired — no fingerprint, no name.
-                        format!("New device · {}", c.peer)
-                    } else {
-                        names
-                            .get(&c.fingerprint)
-                            .map(|n| format!("{n} (#{short_id})"))
-                            .unwrap_or_else(|| format!("#{} · {}", short_id, c.peer))
-                    };
-                    ui.horizontal(|ui| {
-                        let dot = if c.driver { ACCENT() } else { MUTED() };
-                        let (drect, dresp) =
-                            ui.allocate_exact_size(egui::vec2(10.0, 18.0), egui::Sense::hover());
-                        ui.painter().circle_filled(drect.center(), 4.0, dot);
-                        let _ = dresp;
-                        ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new(title)
-                                    .size(12.5)
-                                    .color(TEXT()),
-                            );
-                            let role = if c.driver {
-                                "driver"
-                            } else if c.authed {
-                                "viewer"
-                            } else {
-                                "pairing…"
-                            };
-                            ui.label(
-                                egui::RichText::new(format!("{role} · {ago}"))
-                                    .size(11.0)
-                                    .color(FAINT()),
-                            );
-                        });
-                    });
-                    ui.add_space(6.0);
-                }
-            }
-        });
-
-        ui.add_space(8.0);
     }
 
     /// Validate + persist settings, apply theme live.

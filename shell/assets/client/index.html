@@ -11,6 +11,9 @@
     --accent: #8b72f0; --green: #3fb950; --yellow: #d29922; --red: #f85149;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  button:focus-visible, .tool:focus-visible, .iconbtn:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
   /* Fixed body: the tools sheet lives below the fold (translateY) and
      made the document taller than the viewport, so the page could be
@@ -31,7 +34,7 @@
 
   /* ===== latency + status pills ===== */
   #latency {
-    position: absolute; top: 10px; right: 10px; z-index: 5;
+    position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; z-index: 5;
     background: rgba(20,20,20,.72); color: #e8e8e8;
     font-size: 11px; padding: 4px 9px; border-radius: 999px;
     display: flex; gap: 5px; align-items: center;
@@ -42,7 +45,7 @@
   #latency.pending i { background: var(--faint); }
   /* which PC this client drives */
   #peer {
-    position: absolute; top: 10px; left: 10px; z-index: 5; display: none;
+    position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5; display: none;
     background: rgba(20,20,20,.72); color: var(--muted);
     font-size: 11px; padding: 4px 10px; border-radius: 999px;
     max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -53,10 +56,14 @@
   #latency.warn i { background: var(--yellow); }
   #latency.bad i { background: var(--red); }
   #status {
-    position: absolute; top: 10px; right: 86px; z-index: 5;
+    position: absolute; top: max(10px, env(safe-area-inset-top)); right: 88px; z-index: 5;
     background: rgba(20,20,20,.72); color: var(--muted);
     font-size: 11px; padding: 4px 9px; border-radius: 999px;
+    display: flex; align-items: center; gap: 6px;
   }
+  #status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
+  #status.live::before { background: var(--green); }
+  #status.view::before { background: var(--accent); }
 
   /* ===== "browser not started" overlay ===== */
   #browserDown {
@@ -126,12 +133,13 @@
     position: absolute; left: 50%; right: auto; bottom: 0; z-index: 15;
     width: min(100%, 620px); transform: translateX(-50%) translateY(calc(100% + 10px));
     background: var(--panel); border: 1px solid var(--border); border-bottom: none;
-    border-radius: 18px 18px 0 0; padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
     transition: transform .26s cubic-bezier(.32,.72,.35,1);
     box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
   }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
-  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d; margin: 2px auto 10px; }
+  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d;
+    margin: 2px auto 10px; cursor: grab; touch-action: none; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
   .sheet-head .t { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
   .sheet-close { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
@@ -254,7 +262,9 @@
   .prompt-actions .primary { margin-top: 0; }
 
   #toast {
-    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%) translateY(8px); z-index: 35;
+    position: absolute; left: 50%;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(8px); z-index: 35;
     background: rgba(28,28,28,.94); color: var(--text); border: 1px solid var(--border);
     padding: 8px 15px; border-radius: 999px; font-size: 12.5px; opacity: 0; pointer-events: none;
     transition: opacity .2s, transform .2s; white-space: nowrap;
@@ -376,21 +386,24 @@
     </button>
   </div>
   <div class="addr">
-    <div class="url" id="urlBar" title="Open URL">
+    <div class="url" id="urlBar" title="Open URL" role="button" aria-label="Open a URL">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
       <span id="urlText" class="ph">Search or enter address</span>
     </div>
-    <div class="iconbtn" id="reloadBtn" title="Reload">
+    <div class="iconbtn" id="copyBtn" title="Copy page link" role="button" aria-label="Copy the page link">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+    </div>
+    <div class="iconbtn" id="reloadBtn" title="Reload" role="button" aria-label="Reload the page">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
     </div>
-    <div class="iconbtn" id="homeBtn" title="Home">
+    <div class="iconbtn" id="homeBtn" title="Home" role="button" aria-label="Go to the start page">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 10.5L12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg>
     </div>
   </div>
   <div class="tabs" id="tabs"></div>
   <div class="grid">
-    <button class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
-    <button class="tool" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg>Forward</button>
+    <button class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
+    <button class="tool" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M9 5l7 7-7 7"/></svg>Forward</button>
     <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</button>
     <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
     <button class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span id="desktopLabel">Desktop</span></button>
@@ -405,7 +418,7 @@
   </div>
 </div>
 
-<div id="fab" aria-label="tools">
+<div id="fab" role="button" aria-label="Open the tools sheet">
   <svg class="ico-grip" viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
   <svg class="ico-grid" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>
   <svg class="ico-close" viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
