@@ -396,6 +396,13 @@ var qrScanned = false;
     latencyMs.textContent = ms + " ms";
     latencyEl.className = "rail-ping " + (ms < 300 ? "" : ms < 900 ? "warn" : "bad");
     latencyEl.title = "Round-trip to the PC (not input latency)";
+    // The same number in the status pill, so it is visible without
+    // opening the rail.
+    var pill = document.getElementById("statusLatency");
+    if (pill) {
+      pill.textContent = ms + " ms";
+      pill.title = "Round-trip to the PC (not input latency)";
+    }
   }
 
   function connect() {

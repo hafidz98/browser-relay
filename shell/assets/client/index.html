@@ -77,6 +77,14 @@
   #latency.warn i { background: var(--yellow); }
   #latency.bad i { background: var(--red); }
   /* One status place, always in the same corner. */
+  /* The fold button sits in the top left corner when the rail is
+     collapsed: the status pill moves down so it stays readable. */
+  body.rail-collapsed #status { top: 58px; }
+  #statusLatency {
+    color: var(--faint); font-variant-numeric: tabular-nums;
+    border-left: 1px solid var(--border); padding-left: 7px; margin-left: 2px;
+  }
+  #statusLatency:empty { display: none; }
   #status {
     position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5;
     background: var(--chip); color: var(--text);
@@ -641,7 +649,7 @@
 
 <img id="screen" alt="" draggable="false">
 
-<div id="status"><span id="statusText">connecting…</span></div>
+<div id="status"><span id="statusText">connecting…</span><span id="statusLatency"></span></div>
 <div id="pausedBar" style="display:none">
   <span>Chrome is in the background - the screen is frozen</span>
   <button id="wakeChrome">Bring it to the front</button>

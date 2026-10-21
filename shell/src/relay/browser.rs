@@ -624,6 +624,16 @@ impl Browser {
         let button = if ["left", "middle", "right"].contains(&button) { button } else { "left" };
         // Client sends frame pixels; CDP expects the page's CSS pixels.
         let (cx, cy) = self.to_css(x, y, img_w, img_h);
+        if action != "move" {
+            let (st_pw, st_ph, st_fw, st_fh, st_dsf) = {
+                let st = self.state.lock().unwrap();
+                (st.page_w, st.page_h, st.frame_w, st.frame_h, st.dsf)
+            };
+            rlog!(
+                "mouse {action} img={img_w:.0}x{img_h:.0} page={st_pw:.0}x{st_ph:.0} \
+                 frame={st_fw:.0}x{st_fh:.0} dsf={st_dsf:.1} from=({x:.1},{y:.1}) -> ({cx:.1},{cy:.1})"
+            );
+        }
         self.call(
             "Input.dispatchMouseEvent",
             json!({"type": t, "x": cx, "y": cy, "button": button, "clickCount": 1}),
