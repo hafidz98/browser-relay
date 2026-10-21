@@ -246,7 +246,7 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
         ""
     };
     format!(
-        r#"<!DOCTYPE html>
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -290,7 +290,7 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
   {apk_btn}
 </div>
 </body>
-</html>"#,
+</html>"##,
         blurb_cls = if valid && has_code { "" } else { " class=\"warn\"" },
     )
 }
