@@ -651,6 +651,34 @@ impl Browser {
         self.apply_emulation(&cdp, on, width, height).await
     }
 
+    /// Render the page at the client's viewport size.
+    ///
+    /// The screencast then matches the client 1:1: the remote page
+    /// fills the view without letterbox bars and the text stays as
+    /// sharp as the screen it is shown on.
+    pub async fn set_viewport(&self, width: u32, height: u32, dpr: f64) -> Result<(), String> {
+        let (cdp, mobile) = {
+            let st = self.state.lock().unwrap();
+            (st.cdp.clone(), st.mobile)
+        };
+        let cdp = cdp.ok_or("no tab attached")?;
+        if mobile {
+            // The phone view keeps its own metrics (touch, mobile UA).
+            return self.apply_emulation(&cdp, true, width, height).await;
+        }
+        let w = width.clamp(320, 1920);
+        let h = height.clamp(320, 1600);
+        // Render at 2x only when the client really has a HiDPI screen,
+        // and keep the frame inside the screencast bounds.
+        let dsf = if dpr >= 1.5 { 2.0 } else { 1.0 };
+        cdp.call(
+            "Emulation.setDeviceMetricsOverride",
+            json!({"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": false}),
+        )
+        .await?;
+        Ok(())
+    }
+
     async fn apply_emulation(
         &self,
         cdp: &Arc<Cdp>,

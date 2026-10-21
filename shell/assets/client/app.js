@@ -6,6 +6,7 @@
   var status = document.getElementById("status");
   var peer = document.getElementById("peer");
   var latencyEl = document.getElementById("latency");
+  var statusText = document.getElementById("statusText");
   var latencyMs = document.getElementById("latencyMs");
   var authBox = document.getElementById("auth");
   var authErr = document.getElementById("authErr");
@@ -95,8 +96,16 @@ var qrScanned = false;
     ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46, Home: 36,
     End: 35, PageUp: 33, PageDown: 34 };
 
+  var roleLabel = "";
+  var peerHost = "";
+  function updateStatusText() {
+    var t = roleLabel || "connecting…";
+    if (peerHost) t += " · " + peerHost;
+    statusText.textContent = t;
+  }
   function setStatus(s, cls) {
-    status.textContent = s;
+    roleLabel = s || "";
+    updateStatusText();
     status.className = cls || "";
   }
 
@@ -167,9 +176,48 @@ var qrScanned = false;
     if (saved === "1") document.body.classList.add("rail-collapsed");
     var hide = document.getElementById("railToggle");
     var show = document.getElementById("railOpen");
-    if (hide) hide.onclick = function () { set(true); };
-    if (show) show.onclick = function () { set(false); };
+    var after = function () {
+      // The view got wider: tell the PC, then place the frame.
+      setTimeout(function () {
+        if (typeof sendViewport === "function") sendViewport();
+        if (typeof fitFrame === "function") fitFrame();
+      }, 60);
+    };
+    if (hide) hide.onclick = function () { set(true); after(); };
+    if (show) show.onclick = function () { set(false); after(); };
   })();
+
+  // ---- touch has no hover: a long press names the icon ----
+  function bindLongPress(el) {
+    if (!el) return;
+    var label = el.getAttribute("title") || el.getAttribute("aria-label") || "";
+    if (!label) return;
+    var timer = null;
+    var start = function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { toast(label); }, 550);
+    };
+    var stop = function () { clearTimeout(timer); };
+    el.addEventListener("pointerdown", start);
+    el.addEventListener("pointerup", stop);
+    el.addEventListener("pointercancel", stop);
+    el.addEventListener("pointerleave", stop);
+  }
+  ["copyBtn", "reloadBtn", "homeBtn"].forEach(function (id) {
+    bindLongPress(document.getElementById(id));
+  });
+
+  // ---- the rail scrolls: fade the bottom while there is more ----
+  var railBody = document.querySelector(".rail-body");
+  if (railBody) {
+    var railMore = function () {
+      var more = railBody.scrollTop + railBody.clientHeight < railBody.scrollHeight - 2;
+      railBody.classList.toggle("more", more);
+    };
+    railBody.addEventListener("scroll", railMore);
+    window.addEventListener("resize", railMore);
+    setTimeout(railMore, 0);
+  }
 
   // ---- this PC (host + address) ----
   var pcHost = document.getElementById("pcHost");
@@ -281,8 +329,8 @@ var qrScanned = false;
   }, 2000);
   function setLatency(ms) {
     latencyMs.textContent = ms + " ms";
-    latencyEl.className = ms < 300 ? "" : ms < 900 ? "warn" : "bad";
-    latencyEl.title = "Round-trip latency to the PC";
+    latencyEl.className = "rail-ping " + (ms < 300 ? "" : ms < 900 ? "warn" : "bad");
+    latencyEl.title = "Round-trip to the PC (not input latency)";
   }
 
   function connect() {
@@ -321,7 +369,8 @@ var qrScanned = false;
           // Which PC are we driving? (the relay sends the host name)
           if (m.host) {
             pcHostName = m.host;
-            peer.innerHTML = '<i></i>Paired to <b>' + m.host + "</b>";
+            peerHost = m.host;
+            updateStatusText();
             peer.style.display = "flex";
           }
           if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
@@ -349,6 +398,7 @@ var qrScanned = false;
         case "role":
           isDriver = !!m.driver;
           setStatus(isDriver ? "Driving Chrome" : "View only", isDriver ? "live" : "view");
+          if (isDriver) sendViewport();
           break;
         case "frame":
           img.src = "data:image/jpeg;base64," + m.data;
@@ -401,8 +451,8 @@ var qrScanned = false;
       if (tokenInput) tokenInput.disabled = true;
       if (goBtn) goBtn.disabled = true;
       updateSteps();
-      latencyMs.textContent = "— ms";
-      latencyEl.className = "pending";
+      latencyMs.textContent = "—";
+      latencyEl.className = "rail-ping pending";
       showBrowserDown(false);
       setStatus("disconnected — retrying…");
       if (!authed && authBox.style.display !== "none") {
@@ -456,15 +506,74 @@ var qrScanned = false;
     tabsEl.appendChild(nb);
     window.__activeUrl = activeUrl;
     if (activeUrl && activeUrl !== "—") {
-      urlText.textContent = activeUrl;
+      // The domain is what identifies the page; the path is secondary.
+      var domain = activeUrl, rest = "";
+      try {
+        var u2 = new URL(activeUrl);
+        domain = u2.host;
+        rest = (u2.pathname === "/" ? "" : u2.pathname) + u2.search;
+      } catch (e) { domain = activeUrl; }
+      urlText.textContent = "";
+      var dom = document.createElement("b");
+      dom.textContent = domain;
+      var path = document.createElement("span");
+      path.className = "path";
+      path.textContent = rest;
+      urlText.appendChild(dom);
+      urlText.appendChild(path);
       urlText.classList.remove("ph");
-      document.getElementById("urlBar").classList.add("live");
+      var bar = document.getElementById("urlBar");
+      bar.classList.add("live");
+      bar.title = activeUrl;
     } else {
       urlText.textContent = "Search or enter address";
       urlText.classList.add("ph");
-      document.getElementById("urlBar").classList.remove("live");
+      var bar2 = document.getElementById("urlBar");
+      bar2.classList.remove("live");
+      bar2.title = "Open URL";
     }
   }
+
+  // --- the remote view ---
+  // The PC renders the page at the size of this view, so the frame can
+  // be shown 1:1: no letterbox bars, no rescaling blur. Folding the
+  // tool rail reflows the page instead of zooming it.
+  function viewBox() {
+    var rail = 0;
+    if (window.innerWidth >= 900 && !document.body.classList.contains("rail-collapsed")) rail = 300;
+    return {
+      x: rail, y: 0,
+      w: Math.max(1, window.innerWidth - rail),
+      h: Math.max(1, window.innerHeight)
+    };
+  }
+  function fitFrame() {
+    var nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!nw || !nh) return;
+    var b = viewBox();
+    var z = zoomLevels[zoomIdx] / 100;
+    var w = b.w * z;
+    var h = w * nh / nw;
+    img.style.width = w + "px";
+    img.style.height = h + "px";
+    img.style.left = (b.x + (b.w - w) / 2) + "px";
+    img.style.top = (b.y + (b.h - h) / 2) + "px";
+  }
+  img.addEventListener("load", fitFrame);
+
+  var lastViewport = "";
+  function sendViewport() {
+    if (!ws || ws.readyState !== 1 || !authed || !isDriver) return;
+    var b = viewBox();
+    var dpr = window.devicePixelRatio || 1;
+    var key = Math.round(b.w) + "x" + Math.round(b.h) + "@" + dpr;
+    if (key === lastViewport) return;
+    lastViewport = key;
+    ws.send(JSON.stringify({
+      type: "viewport", width: Math.round(b.w), height: Math.round(b.h), dpr: dpr
+    }));
+  }
+  window.addEventListener("resize", function () { fitFrame(); sendViewport(); });
 
   // --- input: map client pixels -> frame pixels ---
   function toFrame(e) {
@@ -757,7 +866,9 @@ var qrScanned = false;
   // (The "+" button in the tab strip is built in renderTabs and
   // already opens a new tab with a URL.)
   document.getElementById("urlBar").onclick = function () {
-    openPrompt("Open URL", "https://", "https://example.com", "Open", function (u) {
+    // Pre-fill with the address of the page that is open now, so the
+    // full URL is readable and copyable.
+    openPrompt("Open URL", window.__activeUrl || "https://", "https://example.com", "Open", function (u) {
       u = (u || "").trim();
       if (u) send({ type: "tab", action: "new", url: u });
     });
@@ -790,8 +901,7 @@ var qrScanned = false;
   var zoomLabel = document.getElementById("zoomLabel");
   function applyZoom() {
     var z = zoomLevels[zoomIdx];
-    img.style.width = z + "%";
-    img.style.height = z + "%";
+    fitFrame();
     zoomLabel.textContent = z === 100 ? "Zoom" : z + "%";
   }
 

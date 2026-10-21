@@ -36,41 +36,35 @@
 
   /* ===== fullscreen viewport (the remote Chrome page) ===== */
   #screen {
-    position: absolute; inset: 0; width: 100%; height: 100%;
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
     object-fit: contain; display: block; background: var(--bg);
     user-select: none; -webkit-user-select: none; cursor: default;
     touch-action: none; -webkit-touch-callout: none;
   }
 
   /* ===== latency + status pills ===== */
-  #latency {
-    position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; z-index: 5;
-    background: var(--chip); color: var(--text);
-    font-size: 11px; padding: 4px 9px; border-radius: 999px;
-    display: flex; gap: 5px; align-items: center;
+  .rail-ping {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--faint); padding: 2px 2px 0;
     font-variant-numeric: tabular-nums;
   }
-  #latency i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: block; }
+  .rail-ping i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: block; flex: 0 0 auto; }
+  .rail-ping-k { color: var(--faint); }
+  .tabs-label { margin: 16px 0 6px; }
   /* no measurement yet: do not claim a healthy link */
   #latency.pending i { background: var(--faint); }
   /* which PC this client drives */
-  #peer {
-    position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5; display: none;
-    background: var(--chip); color: var(--muted);
-    font-size: 11px; padding: 4px 10px; border-radius: 999px;
-    max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    display: none; align-items: center; gap: 6px;
-  }
-  #peer i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: 0 0 auto; }
-  #peer b { color: var(--text); font-weight: 600; }
+  #peer { display: none; }
   #latency.warn i { background: var(--yellow); }
   #latency.bad i { background: var(--red); }
+  /* One status place, always in the same corner. */
   #status {
-    position: absolute; top: max(10px, env(safe-area-inset-top)); right: 88px; z-index: 5;
-    background: var(--chip); color: var(--muted);
-    font-size: 11px; padding: 4px 9px; border-radius: 999px;
-    display: flex; align-items: center; gap: 6px;
+    position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5;
+    background: var(--chip); color: var(--text);
+    font-size: 11.5px; padding: 5px 11px; border-radius: 999px;
+    display: flex; align-items: center; gap: 6px; max-width: 60vw;
   }
+  #status span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: 0 0 auto; }
   #status.live::before { background: var(--green); }
   #status.view::before { background: var(--accent); }
@@ -164,6 +158,12 @@
   body.sheet-tall #toolsheet { max-height: 92vh; }
   /* The rail scrolls; the exit action stays pinned at the bottom. */
   .rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  /* Fade the bottom while there is more below, so a half-visible
+     button does not look like a rendering bug. */
+  .rail-body.more {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
+  }
   .rail-foot {
     flex: 0 0 auto; padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border); margin-top: 10px;
@@ -378,6 +378,10 @@
   .pc-k { color: var(--faint); width: 58px; flex: 0 0 auto; }
   .pc-line > span:nth-child(2) { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pc-line button { margin-left: auto; }
+  .url #urlText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .url #urlText b { color: var(--text); font-weight: 600; }
+  .url #urlText .path { color: var(--faint); }
+
   #home .searchbar { padding: 14px 16px 4px; }
   #home .searchbar .box {
     display: flex; align-items: center; gap: 9px; background: var(--panel);
@@ -496,8 +500,8 @@
 
   /* ===== tool groups ===== */
   .group { margin-top: 18px; }
-  .group-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--muted); margin: 0 0 8px; }
+  .group-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: #b9b9b9; margin: 0 0 8px; }
   .group .grid { margin-top: 0; }
   .tool.toggle { flex-direction: column; }
   .tool.toggle.on { color: var(--accent); }
@@ -602,9 +606,7 @@
 
 <img id="screen" alt="" draggable="false">
 
-<div id="status">connecting…</div>
-<div id="latency" class="pending"><i></i><span id="latencyMs">— ms</span></div>
-<div id="peer"></div>
+<div id="status"><span id="statusText">connecting…</span></div>
 
 <div id="browserDown"><div class="bd-card">
   <div class="bd-title">Chrome isn't running on the laptop</div>
@@ -643,6 +645,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 10.5L12 3l9 7.5V21H3z"/><path d="M9 21v-6h6v6"/></svg>
     </div>
   </div>
+  <div class="rail-ping pending" id="latency"><i></i><span id="latencyMs">—</span><span class="rail-ping-k">round-trip to the PC</span></div>
+  <div class="group-label tabs-label">Tabs</div>
   <div class="tabs" id="tabs"></div>
   <div class="group"><div class="group-label">Navigate</div>
     <div class="grid">

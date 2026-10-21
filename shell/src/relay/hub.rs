@@ -518,7 +518,7 @@ impl Hub {
         let needs_driver = matches!(
             m.typ.as_str(),
             "mouse" | "wheel" | "key" | "tab" | "clipboard" | "emulation" | "history" | "find"
-                | "chrome"
+                | "chrome" | "viewport"
         );
         if needs_driver && !self.is_driver(id) {
             self.send_err(id, "view-only: another client is driving");
@@ -634,7 +634,22 @@ impl Hub {
                 }
             }
             "viewport" => {
-                // informational for now (future: dynamic screencast bounds)
+                // The client tells us how big its view is. Rendering the
+                // page at that size makes the screencast match 1:1: no
+                // letterbox, no rescaling blur, and folding the tool
+                // rail only reflows the page - it does not zoom it.
+                let w = m.width.unwrap_or(1280) as u32;
+                let h = m.height.unwrap_or(800) as u32;
+                let dpr = m.dpr.unwrap_or(1.0);
+                if let Err(e) = b.set_viewport(w, h, dpr).await {
+                    // No tab attached yet: the size is applied on the
+                    // next attach, so this is not an error the user
+                    // should see.
+                    if !e.contains("no tab attached") {
+                        self.send_err(id, &format!("viewport failed: {e}"));
+                        return;
+                    }
+                }
             }
             "ping" => {
                 self.send_json(id, json!({"type": "pong", "t": m.t}));
@@ -671,5 +686,7 @@ struct ClientMsg {
     mobile: bool,
     width: Option<i64>,
     height: Option<i64>,
+    /// Device pixel ratio of the client view.
+    dpr: Option<f64>,
     t: i64,
 }

@@ -1,6 +1,6 @@
 [package]
 name = "browser-relay-shell"
-version = "0.9.44"
+version = "0.9.45"
 edition = "2021"
 
 [features]
