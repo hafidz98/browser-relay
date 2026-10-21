@@ -347,25 +347,13 @@ impl Browser {
             };
             let _ = self.apply_emulation(&cdp, true, w, h).await;
         }
-        cdp.call(
-            "Page.startScreencast",
-            json!({
-                "format": "jpeg",
-                "quality": self.sc.quality,
-                "maxWidth": self.sc.max_w,
-                "maxHeight": self.sc.max_h,
-                "everyNthFrame": self.sc.every_nth,
-            }),
-        )
-        .await?;
+        self.start_screencast(&cdp).await;
         // Screencast only emits on repaint; send one still immediately.
-        if let Ok(shot) = cdp
-            .call(
-                "Page.captureScreenshot",
-                json!({"format": "jpeg", "quality": self.sc.quality}),
-            )
-            .await
-        {
+        let mut shot_params = json!({"format": "jpeg", "quality": self.sc.quality});
+        if let Some(clip) = self.clip() {
+            shot_params["clip"] = clip;
+        }
+        if let Ok(shot) = cdp.call("Page.captureScreenshot", shot_params).await {
             if let Some(data) = shot.get("data").and_then(|d| d.as_str()) {
                 if !data.is_empty() {
                     self.hub.broadcast_frame(data);
@@ -431,13 +419,11 @@ impl Browser {
     /// screencast frames — a new client would stare at black.
     pub async fn send_still(&self) {
         let Some(cdp) = self.cdp() else { return };
-        if let Ok(shot) = cdp
-            .call(
-                "Page.captureScreenshot",
-                json!({"format": "jpeg", "quality": self.sc.quality}),
-            )
-            .await
-        {
+        let mut shot_params = json!({"format": "jpeg", "quality": self.sc.quality});
+        if let Some(clip) = self.clip() {
+            shot_params["clip"] = clip;
+        }
+        if let Ok(shot) = cdp.call("Page.captureScreenshot", shot_params).await {
             if let Some(data) = shot.get("data").and_then(|d| d.as_str()) {
                 if !data.is_empty() {
                     self.hub.broadcast_frame(data);
@@ -485,6 +471,42 @@ impl Browser {
             let mut st = self.state.lock().unwrap();
             st.page_w = w;
             st.page_h = h;
+        }
+    }
+
+    /// The clip region for the screencast: the page's own viewport.
+    ///
+    /// `setDeviceMetricsOverride` does not resize the OS window, so the
+    /// frame would be the size of the window with the page sitting in
+    /// a corner of it: black bars, a scaled-down page, soft text.
+    /// Clipping the capture to the page makes the frame the page.
+    fn clip(&self) -> Option<Value> {
+        let st = self.state.lock().unwrap();
+        if st.page_w > 0.0 && st.page_h > 0.0 {
+            Some(json!({
+                "x": 0, "y": 0,
+                "width": st.page_w, "height": st.page_h,
+                "scale": 1,
+            }))
+        } else {
+            None
+        }
+    }
+
+    /// (Re)start the screencast, clipped to the page.
+    async fn start_screencast(&self, cdp: &Arc<Cdp>) {
+        let mut params = json!({
+            "format": "jpeg",
+            "quality": self.sc.quality,
+            "maxWidth": self.sc.max_w,
+            "maxHeight": self.sc.max_h,
+            "everyNthFrame": self.sc.every_nth,
+        });
+        if let Some(clip) = self.clip() {
+            params["clip"] = clip;
+        }
+        if let Err(e) = cdp.call("Page.startScreencast", params).await {
+            rlog!("startScreencast: {e}");
         }
     }
 
@@ -836,6 +858,12 @@ impl Browser {
         )
         .await?;
         self.read_page_size(&cdp).await;
+        // The clip follows the page size: restart the capture.
+        let cdp2 = self.state.lock().unwrap().cdp.clone();
+        if let Some(cdp) = cdp2 {
+            let _ = cdp.call("Page.stopScreencast", nop()).await;
+            self.start_screencast(&cdp).await;
+        }
         Ok(())
     }
 
