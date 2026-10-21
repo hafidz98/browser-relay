@@ -79,7 +79,7 @@ struct BState {
     /// The viewport the client asked for (width, height, dpr). Kept so
     /// it can be re-applied when a tab is attached: a new tab starts
     /// with the plain window size again.
-    viewport: Option<(u32, u32, f64)>,
+    viewport: Option<(u32, u32, f64, f64)>,
     /// Is a mouse button held down on the page? A client that goes
     /// away mid-drag would leave it stuck.
     pointer_down: bool,
@@ -354,8 +354,8 @@ impl Browser {
         // A new tab starts with the plain window size: put the client's
         // viewport back.
         let wanted = self.state.lock().unwrap().viewport;
-        if let Some((w, h, dpr)) = wanted {
-            let _ = self.set_viewport(w, h, dpr).await;
+        if let Some((w, h, dpr, z)) = wanted {
+            let _ = self.set_viewport(w, h, dpr, z).await;
         }
         // Chrome without the anti-backgrounding flags stops painting
         // when another window covers it: the screen would freeze.
@@ -515,10 +515,11 @@ impl Browser {
     fn clip(&self) -> Option<Value> {
         let st = self.state.lock().unwrap();
         if st.page_w > 0.0 && st.page_h > 0.0 {
+            let scale = if st.dsf > 1.0 { st.dsf } else { 1.0 };
             Some(json!({
                 "x": 0, "y": 0,
                 "width": st.page_w, "height": st.page_h,
-                "scale": 1,
+                "scale": scale,
             }))
         } else {
             None
@@ -945,13 +946,19 @@ impl Browser {
     /// The screencast then matches the client 1:1: the remote page
     /// fills the view without letterbox bars and the text stays as
     /// sharp as the screen it is shown on.
-    pub async fn set_viewport(&self, width: u32, height: u32, dpr: f64) -> Result<(), String> {
+    pub async fn set_viewport(
+        &self,
+        width: u32,
+        height: u32,
+        dpr: f64,
+        zoom: f64,
+    ) -> Result<(), String> {
         let (cdp, mobile) = {
             let mut st = self.state.lock().unwrap();
             // Remember the request even when no tab is attached yet:
             // otherwise it is lost and the page keeps the size of the
             // window until the client asks again.
-            st.viewport = Some((width, height, dpr));
+            st.viewport = Some((width, height, dpr, zoom));
             (st.cdp.clone(), st.mobile)
         };
         let cdp = cdp.ok_or("no tab attached")?;
@@ -961,16 +968,18 @@ impl Browser {
         }
         let w = width.clamp(320, 1920);
         let h = height.clamp(320, 1600);
-        // Render at 2x only when the client really has a HiDPI screen,
-        // and keep the frame inside the screencast bounds.
-        let dsf = if dpr >= 1.5 { 2.0 } else { 1.0 };
+        // Capture at the zoom the client displays the picture with, so
+        // the text stays sharp when the client zooms in. The page
+        // itself is laid out at the size the client asked for, so the
+        // zoom never changes the remote layout.
+        let dsf = if zoom >= 1.4 { 2.0 } else { 1.0 };
         // The mouse mapping divides the frame pixels by this, so it has
         // to match what we actually render with - otherwise every click
         // lands twice as far from where it was aimed.
         {
             let mut st = self.state.lock().unwrap();
             st.dsf = dsf;
-            st.viewport = Some((w, h, dpr));
+            st.viewport = Some((w, h, dpr, zoom));
         }
         cdp.call(
             "Emulation.setDeviceMetricsOverride",

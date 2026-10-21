@@ -735,7 +735,7 @@ impl Hub {
                 let w = m.width.unwrap_or(1280) as u32;
                 let h = m.height.unwrap_or(800) as u32;
                 let dpr = m.dpr.unwrap_or(1.0);
-                if let Err(e) = b.set_viewport(w, h, dpr).await {
+                if let Err(e) = b.set_viewport(w, h, dpr, m.z.unwrap_or(1.0)).await {
                     // No tab attached yet: the size is applied on the
                     // next attach, so this is not an error the user
                     // should see.
@@ -782,6 +782,8 @@ struct ClientMsg {
     height: Option<i64>,
     /// Device pixel ratio of the client view.
     dpr: Option<f64>,
+    /// The browser zoom of the client view (1 = no zoom).
+    z: Option<f64>,
     /// The size of the image the client shows (frame pixels). With it
     /// the click maps onto the page exactly, whatever the frame scale
     /// turned out to be.

@@ -663,8 +663,17 @@ var qrScanned = false;
     var key = Math.round(b.w) + "x" + Math.round(b.h) + "@" + dpr;
     if (key === lastViewport && !force) return;
     lastViewport = key;
+    // The browser's own zoom must not change what the PC renders: the
+    // remote page keeps its full layout, the zoom only makes the
+    // picture bigger on this screen.
+    var zoom = (window.visualViewport && window.visualViewport.scale) || 1;
+    if (zoom < 1) zoom = 1;
     ws.send(JSON.stringify({
-      type: "viewport", width: Math.round(b.w), height: Math.round(b.h), dpr: dpr
+      type: "viewport",
+      width: Math.round(b.w / zoom),
+      height: Math.round(b.h / zoom),
+      dpr: dpr / zoom,
+      z: zoom
     }));
   }
   window.addEventListener("resize", function () { fitFrame(); sendViewport(); });
