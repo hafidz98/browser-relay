@@ -44,9 +44,12 @@
   #peer {
     position: absolute; top: 10px; left: 10px; z-index: 5; display: none;
     background: rgba(20,20,20,.72); color: var(--muted);
-    font-size: 11px; padding: 4px 9px; border-radius: 999px;
+    font-size: 11px; padding: 4px 10px; border-radius: 999px;
     max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: none; align-items: center; gap: 6px;
   }
+  #peer i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: 0 0 auto; }
+  #peer b { color: var(--text); font-weight: 600; }
   #latency.warn i { background: var(--yellow); }
   #latency.bad i { background: var(--red); }
   #status {
@@ -107,13 +110,13 @@
   #fab.round .ico-grid { display: block; }
   #fab.dragging { opacity: 1; transition: none; background: rgba(24,24,24,.85); }
   #fab.open {
-    width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14);
-    background: rgba(139,114,240,.92); opacity: 1;
+    width: 50px; height: 50px; border-radius: 50%; border: 1px solid rgba(255,255,255,.12);
+    background: rgba(38,38,38,.92); opacity: 1;
     box-shadow: 0 6px 18px rgba(0,0,0,.45);
   }
   #fab.open .ico-grip { display: none; }
   #fab.open .ico-grid { display: none; }
-  #fab.open .ico-close { display: block; stroke: #fff; }
+  #fab.open .ico-close { display: block; stroke: var(--muted); }
 
   #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none; transition: opacity .22s; }
   body.sheet-open #backdrop { opacity: 1; pointer-events: auto; }
@@ -128,19 +131,27 @@
     box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
   }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
-  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d; margin: 2px auto 12px; }
+  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d; margin: 2px auto 10px; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
+  .sheet-head .t { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
+  .sheet-close { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--raised); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .sheet-close svg { width: 15px; height: 15px; stroke: var(--muted); }
+  .sheet-close:hover { background: var(--active); }
 
   .addr { display: flex; gap: 8px; align-items: center; }
   .addr .url {
     flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
     background: #141414; border: 1px solid var(--border); border-radius: 999px;
-    padding: 9px 13px; font-size: 13px; color: var(--text); cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    padding: 12px 15px; font-size: 13px; color: var(--text); cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 44px;
   }
   .addr .url:hover { border-color: #454545; }
-  .addr .url svg { width: 13px; height: 13px; stroke: var(--green); flex: 0 0 auto; }
+  .addr .url svg { width: 13px; height: 13px; stroke: var(--faint); flex: 0 0 auto; }
+  .addr .url.live svg { stroke: var(--green); }
+  .addr .url .ph { color: var(--faint); }
   .iconbtn {
-    width: 38px; height: 38px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border);
+    width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border);
     background: var(--raised); display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
   .iconbtn svg { width: 17px; height: 17px; stroke: var(--text); }
@@ -164,17 +175,25 @@
   #newtab:hover { border-color: var(--accent); color: var(--accent); }
 
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
-  .tool { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 11px 2px 9px;
-    border-radius: 12px; cursor: pointer; color: var(--text); font-size: 11px; border: none; background: transparent; font-family: inherit; }
-  .tool:hover { background: var(--raised); }
+  .tool { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 2px 9px; min-height: 46px;
+    border-radius: 12px; cursor: pointer; color: var(--text); font-size: 11.5px;
+    border: 1px solid transparent; background: rgba(255,255,255,.04); font-family: inherit; }
+  .tool:hover { background: var(--raised); border-color: var(--border); }
+  .tool.off { opacity: .38; pointer-events: none; }
   .tool.dim { color: var(--faint); }
   .tool.on { color: var(--accent); }
   .tool svg { width: 21px; height: 21px; stroke: currentColor; }
   /* session-ending actions live in their own row, not next to Back/Forward */
-  .grid.danger { grid-template-columns: repeat(2, 1fr); margin-top: 8px; padding-top: 10px;
-    border-top: 1px solid var(--border); }
-  .tool.danger { color: var(--red); background: rgba(248,81,73,.07); }
-  .tool.danger:hover { background: rgba(248,81,73,.16); }
+  .grid.danger { grid-template-columns: 1fr; gap: 8px; margin-top: 6px; }
+  .danger-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--faint); margin: 4px 2px 2px; }
+  .tool.danger { flex-direction: row; gap: 10px; justify-content: flex-start; padding-left: 14px;
+    color: var(--muted); background: rgba(255,255,255,.03); }
+  .tool.danger svg { width: 19px; height: 19px; }
+  .tool.danger:hover { background: rgba(248,81,73,.12); color: var(--red); }
+  .tool.danger.primary { color: #fff; background: rgba(248,81,73,.16); border-color: rgba(248,81,73,.4); }
+  .tool.danger.primary:hover { background: rgba(248,81,73,.26); }
 
   /* ===== auth ===== */
   #auth {
@@ -350,10 +369,16 @@
 
 <div id="toolsheet">
   <div class="grip"></div>
+  <div class="sheet-head">
+    <span class="t">Tools</span>
+    <button class="sheet-close" id="sheetClose" aria-label="Close tools">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
   <div class="addr">
     <div class="url" id="urlBar" title="Open URL">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-      <span id="urlText">—</span>
+      <span id="urlText" class="ph">Search or enter address</span>
     </div>
     <div class="iconbtn" id="reloadBtn" title="Reload">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
@@ -370,12 +395,13 @@
     <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
     <button class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span id="desktopLabel">Desktop</span></button>
     <button class="tool" data-act="zoom"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg><span id="zoomLabel">Zoom</span></button>
-    <button class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Find</button>
+    <button class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5h9M4 10h7M4 15h9"/><circle cx="16.5" cy="15.5" r="4.5"/><path d="M20 19l-1.8-1.8"/></svg>Find</button>
     <button class="tool" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
   </div>
+  <div class="danger-label">Session</div>
   <div class="grid danger">
     <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
-    <button class="tool danger" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+    <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
   </div>
 </div>
 

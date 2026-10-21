@@ -50,6 +50,11 @@ jobs:
         run: cargo test --no-default-features
         working-directory: shell
 
+      # The web client is plain JS served as a static file - a syntax
+      # error there breaks the phone client without any Rust failing.
+      - name: Check web client script
+        run: node --check shell/assets/client/app.js
+
   windows-exe:
     # Tag push builds the release binary; manual dispatch builds it
     # from any branch so the pipeline can be tested without a tag.

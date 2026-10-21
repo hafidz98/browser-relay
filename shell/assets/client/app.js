@@ -92,6 +92,13 @@
   function setStatus(s) { status.textContent = s; }
 
   var browserDownEl = document.getElementById("browserDown");
+  var browserUp = false;
+  // "Stop Chrome" only makes sense while Chrome is actually running.
+  function setChromeRunning(up) {
+    browserUp = !!up;
+    var b = document.querySelector('[data-act="chrome-stop"]');
+    if (b) b.classList.toggle("off", !browserUp);
+  }
   function showBrowserDown(down) {
     if (browserDownEl) browserDownEl.style.display = down ? "flex" : "none";
   }
@@ -174,10 +181,13 @@
           authErr.textContent = "";
           goBtn.disabled = false;
           goBtn.textContent = "Connect";
-          setStatus(isDriver ? "Driving" : "View only");
+          setStatus(isDriver ? "Driving Chrome" : "View only");
           // Which PC are we driving? (the relay sends the host name)
-          if (m.host) { peer.textContent = "Paired to " + m.host; peer.style.display = "block"; }
-          if (m.browserUp !== undefined) showBrowserDown(!m.browserUp);
+          if (m.host) {
+            peer.innerHTML = '<i></i>Paired to <b>' + m.host + "</b>";
+            peer.style.display = "flex";
+          }
+          if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
           // Auto-set emulation mode on first connect based on device type.
           // Mobile devices get mobile emulation; desktop gets desktop mode.
           // This ensures the emulation matches the current client, not a
@@ -190,6 +200,7 @@
           }
           break;
         case "status":
+          setChromeRunning(m.browserUp);
           showBrowserDown(!m.browserUp);
           break;
         case "pong":
@@ -197,7 +208,7 @@
           break;
         case "role":
           isDriver = !!m.driver;
-          setStatus(isDriver ? "Driving" : "View only");
+          setStatus(isDriver ? "Driving Chrome" : "View only");
           break;
         case "frame":
           img.src = "data:image/jpeg;base64," + m.data;
@@ -288,7 +299,15 @@
       });
     };
     tabsEl.appendChild(nb);
-    urlText.textContent = activeUrl;
+    if (activeUrl && activeUrl !== "—") {
+      urlText.textContent = activeUrl;
+      urlText.classList.remove("ph");
+      document.getElementById("urlBar").classList.add("live");
+    } else {
+      urlText.textContent = "Search or enter address";
+      urlText.classList.add("ph");
+      document.getElementById("urlBar").classList.remove("live");
+    }
   }
 
   // --- input: map client pixels -> frame pixels ---
@@ -488,6 +507,7 @@
     armIdle();
   });
   armIdle();
+  document.getElementById("sheetClose").onclick = function () { toggleSheet(false); };
   document.getElementById("backdrop").onclick = function () {
     // Ignore the synthetic click that follows the pointerup which opened
     // the sheet — otherwise the sheet flashes open then immediately closes.
@@ -549,6 +569,7 @@
         });
       }
       else if (act === "chrome-stop") {
+        if (!browserUp) { toast("Chrome is not running"); return; }
         if (confirm("Stop Chrome on the laptop?")) send({ type: "chrome", action: "close" });
       }
       else if (act === "disconnect") {
