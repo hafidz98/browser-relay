@@ -831,7 +831,11 @@ impl Browser {
     /// sharp as the screen it is shown on.
     pub async fn set_viewport(&self, width: u32, height: u32, dpr: f64) -> Result<(), String> {
         let (cdp, mobile) = {
-            let st = self.state.lock().unwrap();
+            let mut st = self.state.lock().unwrap();
+            // Remember the request even when no tab is attached yet:
+            // otherwise it is lost and the page keeps the size of the
+            // window until the client asks again.
+            st.viewport = Some((width, height, dpr));
             (st.cdp.clone(), st.mobile)
         };
         let cdp = cdp.ok_or("no tab attached")?;
