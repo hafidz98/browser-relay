@@ -166,8 +166,13 @@ pub fn launch_chrome() -> Result<(), String> {
     ];
     if load_headless() {
         args.push("--headless=new".into());
+        // chrome://newtab/ does not create a page target in the new
+        // headless mode, so the relay had nothing to attach to and the
+        // panel kept saying "Chrome not running".
+        args.push("about:blank".into());
+    } else {
+        args.push("chrome://newtab/".into());
     }
-    args.push("chrome://newtab/".into());
     let child = Command::new(&chrome)
         .args(&args)
         .spawn()

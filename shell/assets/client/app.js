@@ -398,7 +398,6 @@ var qrScanned = false;
             pcHostName = m.host;
             peerHost = m.host;
             updateStatusText();
-            peer.style.display = "flex";
           }
           if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
           updateSteps();
@@ -418,6 +417,7 @@ var qrScanned = false;
         case "status":
           setChromeRunning(m.browserUp);
           showBrowserDown(!m.browserUp);
+          if (m.browserUp) sendViewport();
           break;
         case "pong":
           if (m.t) setLatency(Date.now() - m.t);
