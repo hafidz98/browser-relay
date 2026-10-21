@@ -422,6 +422,19 @@
   @keyframes jiggle { 25% { transform: rotate(-2deg); } 75% { transform: rotate(2deg); } }
   #homeGrid .tile.add .icon { background: transparent; border: 1.5px dashed #454545; box-shadow: none; color: var(--muted); font-size: 28px; font-weight: 300; }
   body.home-editing #homeGrid .tile.add { display: none; }
+  #confirmDlg { position: fixed; inset: 0; z-index: 34; display: none; background: var(--scrim);
+    align-items: center; justify-content: center; padding: 24px; }
+  #confirmDlg.open { display: flex; }
+  #confirmDlg .dlg-body { width: 100%; max-width: 340px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 18px; padding: 20px; }
+  #confirmDlg h3 { margin: 0 0 6px; font-size: 16px; }
+  #confirmDlg p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  #confirmDlg .dlg-actions { display: flex; gap: 10px; margin-top: 18px; }
+  #confirmDlg button { flex: 1; padding: 12px; border-radius: 10px; font-size: 14px;
+    font-weight: 600; cursor: pointer; font-family: inherit; }
+  #confirmCancel { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
+  #confirmOk { background: var(--red); color: #fff; border: none; }
+
   #homeDlg { position: fixed; inset: 0; z-index: 32; display: none; background: rgba(0,0,0,.6); align-items: center; justify-content: center; padding: 24px; }
   #homeDlg.open { display: flex; }
   #homeDlg .dlg-body { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 22px 20px; }
@@ -500,6 +513,9 @@
 
   /* ===== tool groups ===== */
   .group { margin-top: 18px; }
+  /* A hairline above every group gives the rail a clear rhythm. */
+  .rail-body .group + .group { border-top: 1px solid var(--border); padding-top: 14px; }
+  .span2 { grid-column: 1 / -1; }
   .group-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
     color: #b9b9b9; margin: 0 0 8px; }
   .group .grid { margin-top: 0; }
@@ -680,11 +696,9 @@
     <div class="grid">
       <button class="tool toggle" id="reconnectBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Reconnect</button>
       <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" stroke="none" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
+      <button class="tool danger primary span2" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
     </div>
   </div>
-  </div>
-  <div class="rail-foot">
-    <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
   </div>
 
 </div>
@@ -776,6 +790,15 @@
     </div>
   </div>
 </div>
+
+<div id="confirmDlg"><div class="dlg-body">
+  <h3 id="confirmTitle">Are you sure?</h3>
+  <p id="confirmText"></p>
+  <div class="dlg-actions">
+    <button id="confirmCancel" class="ghost">Cancel</button>
+    <button id="confirmOk">OK</button>
+  </div>
+</div></div>
 
 <div id="homeDlg"><div class="dlg-body">
   <h3>Add shortcut</h3>

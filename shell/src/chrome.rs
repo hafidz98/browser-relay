@@ -325,27 +325,58 @@ fn wait_pid_gone(pid: u32, timeout: Duration) -> bool {
 }
 
 pub fn close_chrome() -> Result<(), String> {
-    let pid = chrome_pid().ok_or(
-        "no panel-launched Chrome to close (Chrome started outside the panel must be closed from its own window)",
-    )?;
+    // The recorded PID is a hint, not a handle: Chrome re-execs, so the
+    // PID we wrote at launch may already be gone while the browser
+    // keeps running. The DevTools endpoint is the reliable handle.
+    let pid = chrome_pid();
     let _ = fs::remove_file(chrome_pid_path());
     // 1. Graceful via WM_CLOSE (taskkill without /F): the Windows-native
     //    equivalent of clicking the window X. Chrome saves its session,
-    //    so relaunch doesn't show the "restore pages" prompt. For headless
-    //    Chrome (no windows) this errors immediately — that's fine.
-    let _ = taskkill(pid, false);
-    if wait_pid_gone(pid, Duration::from_secs(4)) {
-        return Ok(());
+    //    so relaunch does not show the "restore pages" prompt.
+    if let Some(pid) = pid {
+        let _ = taskkill(pid, false);
+        let _ = wait_pid_gone(pid, Duration::from_secs(2));
     }
-    // 2. CDP Browser.close: covers headless and any headed case where
-    //    WM_CLOSE didn't land (tight timeouts — no 13 s hang).
-    if graceful_browser_close() {
-        return Ok(());
+    // 2. CDP Browser.close: closes the whole browser, tabs included, and
+    //    works for headless Chrome too.
+    let _ = graceful_browser_close();
+    // 3. Wait for the endpoint to go away - that is the proof that the
+    //    browser is really gone.
+    for _ in 0..16 {
+        if !cdp_up() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(150));
     }
-    // 3. Still there? Force kill — but only if the PID is still
-    //    our chrome.exe (never kill a reused PID).
-    if !pid_is_chrome(pid) {
-        return Ok(());
+    // 4. Still answering: kill the process that serves our debug port.
+    if let Some(pid) = chrome_pid_by_debug_port() {
+        if pid_is_chrome(pid) {
+            let _ = taskkill(pid, true);
+            for _ in 0..16 {
+                if !cdp_up() {
+                    return Ok(());
+                }
+                std::thread::sleep(Duration::from_millis(150));
+            }
+        }
     }
-    taskkill(pid, true)
+    Err("Chrome is still running".into())
+}
+
+/// Find the Chrome process that serves our DevTools port.
+fn chrome_pid_by_debug_port() -> Option<u32> {
+    let port = cdp_port();
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | \
+         Where-Object {{ $_.CommandLine -like '*--remote-debugging-port={}*' }} | \
+         Select-Object -First 1 -ExpandProperty ProcessId",
+        port
+    );
+    let out = sys_cmd("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|l| l.trim().parse::<u32>().ok())
 }

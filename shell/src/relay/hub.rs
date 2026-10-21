@@ -588,6 +588,13 @@ impl Hub {
                 match res {
                     Ok(()) => {
                         rlog!("client #{id} chrome {action}");
+                        // Stopping Chrome has to show up everywhere: the
+                        // panel said "Chrome connected" while the browser
+                        // was already gone.
+                        if action == "close" {
+                            self.set_browser_up(false);
+                            self.broadcast_status();
+                        }
                         self.send_json(id, json!({"type": "chrome", "action": action}))
                     }
                     Err(e) => self.send_err(id, &format!("chrome {action} failed: {e}")),

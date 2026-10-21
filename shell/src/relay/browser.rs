@@ -671,6 +671,10 @@ impl Browser {
         // Render at 2x only when the client really has a HiDPI screen,
         // and keep the frame inside the screencast bounds.
         let dsf = if dpr >= 1.5 { 2.0 } else { 1.0 };
+        // The mouse mapping divides the frame pixels by this, so it has
+        // to match what we actually render with - otherwise every click
+        // lands twice as far from where it was aimed.
+        self.state.lock().unwrap().dsf = dsf;
         cdp.call(
             "Emulation.setDeviceMetricsOverride",
             json!({"width": w, "height": h, "deviceScaleFactor": dsf, "mobile": false}),

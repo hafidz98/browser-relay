@@ -187,6 +187,33 @@ var qrScanned = false;
     if (show) show.onclick = function () { set(false); after(); };
   })();
 
+  // ---- confirm dialog (the browser's confirm() does not belong here) ----
+  var confirmDlg = document.getElementById("confirmDlg");
+  var confirmTitle = document.getElementById("confirmTitle");
+  var confirmText = document.getElementById("confirmText");
+  var confirmOk = document.getElementById("confirmOk");
+  var confirmCancel = document.getElementById("confirmCancel");
+  var confirmCb = null;
+  function askConfirm(title, text, okText, cb) {
+    if (!confirmDlg) { cb(); return; }
+    confirmTitle.textContent = title;
+    confirmText.textContent = text || "";
+    confirmOk.textContent = okText || "OK";
+    confirmCb = cb;
+    confirmDlg.classList.add("open");
+  }
+  if (confirmOk) confirmOk.onclick = function () {
+    var cb = confirmCb; confirmCb = null;
+    confirmDlg.classList.remove("open");
+    if (cb) cb(true);
+  };
+  if (confirmCancel) confirmCancel.onclick = function () {
+    confirmCb = null; confirmDlg.classList.remove("open");
+  };
+  if (confirmDlg) confirmDlg.addEventListener("click", function (e) {
+    if (e.target === confirmDlg) { confirmCb = null; confirmDlg.classList.remove("open"); }
+  });
+
   // ---- touch has no hover: a long press names the icon ----
   function bindLongPress(el) {
     if (!el) return;
@@ -600,7 +627,29 @@ var qrScanned = false;
     }
     e.preventDefault();
   });
+  // The PC can only use one move at a time. Sending one per frame
+  // builds a backlog that shows up as lag, so keep the newest position
+  // and let it out at most every 30 ms.
   var moveQueued = null;
+  var lastMove = null;
+  var moveSentAt = 0;
+  function sendMove(x, y, button) {
+    var now = Date.now();
+    var wait = 30 - (now - moveSentAt);
+    if (wait <= 0) {
+      moveSentAt = now;
+      lastMove = null;
+      send({ type: "mouse", action: "move", x: x, y: y, button: button });
+    } else {
+      lastMove = { x: x, y: y, button: button };
+      setTimeout(function () {
+        if (!lastMove) return;
+        var m = lastMove; lastMove = null;
+        moveSentAt = Date.now();
+        send({ type: "mouse", action: "move", x: m.x, y: m.y, button: m.button });
+      }, wait);
+    }
+  }
   img.addEventListener("pointermove", function (e) {
     if (!moveQueued) {
       moveQueued = {};
@@ -612,14 +661,14 @@ var qrScanned = false;
           var dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
           if (!touchStart.moved && Math.hypot(dx, dy) > 10) touchStart.moved = true;
           if (touchStart.moved) {
-            send({ type: "wheel", x: p.x, y: p.y, dx: -dx, dy: -dy });
+            send({ type: "wheel", x: p.x, y: p.y, dx: -dx * 0.55, dy: -dy * 0.55 });
             touchStart.x = e.clientX; touchStart.y = e.clientY;
             return;
           }
           // Not yet a scroll, don't send mouse move (avoid hover effects).
           return;
         }
-        send({ type: "mouse", action: "move", x: p.x, y: p.y, button: btn(e) });
+        sendMove(p.x, p.y, btn(e));
       });
     }
   });
@@ -642,7 +691,10 @@ var qrScanned = false;
   img.addEventListener("pointercancel", function () { touchStart = null; });
   img.addEventListener("wheel", function (e) {
     var p = toFrame(e); if (!p) return;
-    send({ type: "wheel", x: p.x, y: p.y, dx: e.deltaX, dy: e.deltaY });
+    // One notch is a small step, not a scroll through the whole page.
+    var k = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 400 : 1);
+    var clamp = function (v) { return Math.max(-160, Math.min(160, v)) * 0.55; };
+    send({ type: "wheel", x: p.x, y: p.y, dx: clamp(e.deltaX * k), dy: clamp(e.deltaY * k) });
     e.preventDefault();
   }, { passive: false });
   img.addEventListener("contextmenu", function (e) { e.preventDefault(); });
@@ -942,15 +994,20 @@ var qrScanned = false;
     }
     else if (act === "chrome-stop") {
       if (!browserUp) { toast("Chrome is not running"); return; }
-      if (confirm("Stop Chrome on the laptop?")) send({ type: "chrome", action: "close" });
+      askConfirm("Stop Chrome on the laptop?",
+        "The browser closes and the relay waits for Chrome to start again.",
+        "Stop Chrome", function () { send({ type: "chrome", action: "close" }); });
     }
     else if (act === "disconnect") {
       // Clear pairing and reload to the pairing screen. This forgets
-      // the device on the PC as well, so confirm first.
-      if (!confirm("Disconnect and forget this device?")) return;
-      try { localStorage.removeItem("br_fingerprint"); } catch (e) {}
-      if (ws) ws.close();
-      location.reload();
+      // the device on the PC as well, so ask first.
+      askConfirm("Disconnect this device?",
+        "This device is forgotten by the relay and has to pair again.",
+        "Disconnect", function () {
+          try { localStorage.removeItem("br_fingerprint"); } catch (e) {}
+          if (ws) ws.close();
+          location.reload();
+        });
     }
   }
   document.querySelectorAll("[data-act]").forEach(function (el) {
