@@ -206,6 +206,7 @@ var qrScanned = false;
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     ws = new WebSocket(proto + "//" + location.host + "/ws");
     ws.onopen = function () {
+      updateSteps();
       // QR code (single-use) takes precedence; else fingerprint reconnect.
       // BUT: if the user is mid-pairing (input field visible), don't auto-auth —
       // let them click Hubungkan manually. Auto-auth without token would
@@ -815,7 +816,7 @@ var qrScanned = false;
       });
       var add = document.createElement("button");
       add.className = "tile add";
-      add.innerHTML = '<div class="icon">+</div><span class="label">Tambah</span>';
+      add.innerHTML = '<div class="icon">+</div><span class="label">Add</span>';
       add.onclick = function () {
         document.getElementById("homeDlgName").value = "";
         document.getElementById("homeDlgUrl").value = "";
