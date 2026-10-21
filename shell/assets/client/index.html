@@ -468,7 +468,7 @@
       position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 300px; height: 100%;
       max-height: none; padding: 16px 16px 0;
       transform: none !important; border-radius: 0; overflow-y: auto; z-index: 30;
-      padding: 16px 16px 24px; border-right: 1px solid var(--border);
+      padding: 16px 16px 0; border-right: 1px solid var(--border);
     }
     #toolsheet .grip, #toolsheet .sheet-close { display: none; }
     /* Fold the rail away - the remote screen is the point of the app. */
@@ -501,7 +501,6 @@
     /* The exit action must never be cut off - it sticks to the bottom
        of the rail, and the rail keeps enough bottom padding that the
        row above can scroll clear of it. */
-    #toolsheet { padding-bottom: 120px; }
     #toolsheet .rail-foot { padding: 10px 0 16px; }
     /* The address row needs its own line in the 300px rail. */
     .addr { flex-wrap: wrap; }
