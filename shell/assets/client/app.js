@@ -187,14 +187,12 @@ var qrScanned = false;
     if (show) show.onclick = function () { set(false); after(); };
   })();
 
-  // ---- the screen is frozen (Chrome minimized or covered) ----
+  // ---- Chrome in the background: the PC keeps sending frames, so
+  // there is nothing to warn about. The button is kept for the case
+  // where the user wants the window in front anyway. ----
   function setPaused(on) {
     var bar = document.getElementById("pausedBar");
-    if (!bar) return;
-    bar.style.display = on ? "flex" : "none";
-    var btn = document.getElementById("wakeChrome");
-    if (btn) btn.style.display = isDriver ? "block" : "none";
-    placeBars();
+    if (bar) bar.style.display = "none";
   }
   // ---- Chrome runs without the flags that keep it painting ----
   function setFlagsOk(ok) {
@@ -670,7 +668,12 @@ var qrScanned = false;
     if (!img.naturalWidth || !r.width) return null;
     return {
       x: (e.clientX - r.left) * img.naturalWidth / r.width,
-      y: (e.clientY - r.top) * img.naturalHeight / r.height
+      y: (e.clientY - r.top) * img.naturalHeight / r.height,
+      // The PC needs to know how big the image really is: the frame can
+      // be scaled by the capture limits, and then the click would land
+      // next to the button.
+      iw: img.naturalWidth,
+      ih: img.naturalHeight
     };
   }
   function send(o) { if (ws && authed && isDriver) ws.send(JSON.stringify(o)); }
@@ -685,7 +688,7 @@ var qrScanned = false;
     if (e.pointerType === "touch") {
       touchStart = { x: e.clientX, y: e.clientY, px: p.x, py: p.y, moved: false, id: e.pointerId };
     } else {
-      send({ type: "mouse", action: "down", x: p.x, y: p.y, button: btn(e) });
+      send({ type: "mouse", action: "down", x: p.x, y: p.y, button: btn(e) , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
     }
     e.preventDefault();
   });
@@ -701,14 +704,14 @@ var qrScanned = false;
     if (wait <= 0) {
       moveSentAt = now;
       lastMove = null;
-      send({ type: "mouse", action: "move", x: x, y: y, button: button });
+      send({ type: "mouse", action: "move", x: x, y: y, button: button , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
     } else {
       lastMove = { x: x, y: y, button: button };
       setTimeout(function () {
         if (!lastMove) return;
         var m = lastMove; lastMove = null;
         moveSentAt = Date.now();
-        send({ type: "mouse", action: "move", x: m.x, y: m.y, button: m.button });
+        send({ type: "mouse", action: "move", x: m.x, y: m.y, button: m.button , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
       }, wait);
     }
   }
@@ -723,7 +726,7 @@ var qrScanned = false;
           var dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
           if (!touchStart.moved && Math.hypot(dx, dy) > 10) touchStart.moved = true;
           if (touchStart.moved) {
-            send({ type: "wheel", x: p.x, y: p.y, dx: -dx * 0.55, dy: -dy * 0.55 });
+            send({ type: "wheel", x: p.x, y: p.y, dx: -dx * 0.55, dy: -dy * 0.55 , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
             touchStart.x = e.clientX; touchStart.y = e.clientY;
             return;
           }
@@ -742,13 +745,13 @@ var qrScanned = false;
       var wasScroll = touchStart.moved;
       touchStart = null;
       if (!wasScroll) {
-        send({ type: "mouse", action: "down", x: p.x, y: p.y, button: "left" });
-        send({ type: "mouse", action: "up", x: p.x, y: p.y, button: "left" });
+        send({ type: "mouse", action: "down", x: p.x, y: p.y, button: "left" , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
+        send({ type: "mouse", action: "up", x: p.x, y: p.y, button: "left" , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
       }
       return;
     }
     touchStart = null;
-    send({ type: "mouse", action: "up", x: p.x, y: p.y, button: btn(e) });
+    send({ type: "mouse", action: "up", x: p.x, y: p.y, button: btn(e) , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
   });
   img.addEventListener("pointercancel", function () { touchStart = null; });
   img.addEventListener("wheel", function (e) {
@@ -756,7 +759,7 @@ var qrScanned = false;
     // One notch is a small step, not a scroll through the whole page.
     var k = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 400 : 1);
     var clamp = function (v) { return Math.max(-160, Math.min(160, v)) * 0.55; };
-    send({ type: "wheel", x: p.x, y: p.y, dx: clamp(e.deltaX * k), dy: clamp(e.deltaY * k) });
+    send({ type: "wheel", x: p.x, y: p.y, dx: clamp(e.deltaX * k), dy: clamp(e.deltaY * k) , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
     e.preventDefault();
   }, { passive: false });
   img.addEventListener("contextmenu", function (e) { e.preventDefault(); });

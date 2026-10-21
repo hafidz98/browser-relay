@@ -266,6 +266,7 @@ impl RelayHandle {
             mine.push(tokio::spawn(httpd::serve(listener, hub.clone())));
             mine.push(tokio::spawn(browser.clone().watch()));
             mine.push(tokio::spawn(browser.clone().maintain()));
+    mine.push(tokio::spawn(browser.clone().poll_frames()));
             // status writer (1 s): connected = DevTools answers AND a
             // tab is attached; clients from the hub.
             let sh2 = shared.clone();

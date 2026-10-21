@@ -5,6 +5,15 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Milliseconds since the epoch, for the frame timers.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -71,6 +80,10 @@ struct BState {
     /// it can be re-applied when a tab is attached: a new tab starts
     /// with the plain window size again.
     viewport: Option<(u32, u32, f64)>,
+    /// When the screencast last delivered a frame (millis since epoch).
+    /// If that stops, the page is not painting (a minimized window, a
+    /// background tab) and the poll takes over.
+    last_screencast_ms: u64,
     orig_ua: String,
     last_tabs: Vec<PageTarget>,
 }
@@ -112,6 +125,7 @@ impl Browser {
                 frame_w: 0.0,
                 frame_h: 0.0,
                 viewport: None,
+                last_screencast_ms: 0,
                 orig_ua: String::new(),
                 last_tabs: Vec::new(),
             }),
@@ -360,6 +374,14 @@ impl Browser {
                 }
             }
         }
+        // Keep the page alive: a background or hidden page is throttled
+        // by the browser and stops painting.
+        let _ = cdp
+            .call("Page.setWebLifecycleState", json!({"state": "active"}))
+            .await;
+        let _ = cdp
+            .call("Emulation.setFocusEmulationEnabled", json!({"enabled": true}))
+            .await;
         rlog!("attached to tab {target_id}");
         Ok(())
     }
@@ -379,6 +401,7 @@ impl Browser {
                         st.frame_w = w;
                         st.frame_h = h;
                     }
+                    self.state.lock().unwrap().last_screencast_ms = now_ms();
                 }
                 let data = data.to_string();
                 let session = params.get("sessionId").cloned().unwrap_or(Value::Null);
@@ -525,7 +548,7 @@ impl Browser {
             .map(|_| ())
     }
 
-    /// Is the page in the foreground?
+/// Is the page in the foreground?
     ///
     /// A minimized or covered window stops painting, so the screencast
     /// freezes and the phone keeps looking at an old screen. The page
@@ -558,11 +581,18 @@ impl Browser {
     /// emulated viewport shows the page scaled up. Dividing by the
     /// device pixel factor alone then puts every click the wrong
     /// place, so the real page size and the real frame size are used.
-    fn to_css(&self, x: f64, y: f64) -> (f64, f64) {
+    fn to_css(&self, x: f64, y: f64, img_w: f64, img_h: f64) -> (f64, f64) {
         let st = self.state.lock().unwrap();
         let (page_w, page_h) = (st.page_w, st.page_h);
         let (frame_w, frame_h) = (st.frame_w, st.frame_h);
         let dsf = st.dsf;
+        // The client sends the size of the image it shows, so the frame
+        // in real pixels is known exactly: map those pixels onto the
+        // page's CSS pixels. No guessing with the pixel ratio, no
+        // guessing with the screencast limits.
+        if img_w > 0.0 && img_h > 0.0 && page_w > 0.0 && page_h > 0.0 {
+            return (x * page_w / img_w, y * page_h / img_h);
+        }
         // The frame is the page in device pixels, capped by the
         // screencast limits.
         let px_w = if frame_w > 0.0 { (frame_w * dsf).min(self.sc.max_w as f64) } else { 0.0 };
@@ -576,7 +606,15 @@ impl Browser {
         }
     }
 
-    pub async fn mouse(&self, action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
+    pub async fn mouse(
+        &self,
+        action: &str,
+        x: f64,
+        y: f64,
+        button: &str,
+        img_w: f64,
+        img_h: f64,
+    ) -> Result<(), String> {
         let t = match action {
             "move" => "mouseMoved",
             "down" => "mousePressed",
@@ -585,7 +623,7 @@ impl Browser {
         };
         let button = if ["left", "middle", "right"].contains(&button) { button } else { "left" };
         // Client sends frame pixels; CDP expects the page's CSS pixels.
-        let (cx, cy) = self.to_css(x, y);
+        let (cx, cy) = self.to_css(x, y, img_w, img_h);
         self.call(
             "Input.dispatchMouseEvent",
             json!({"type": t, "x": cx, "y": cy, "button": button, "clickCount": 1}),
@@ -594,8 +632,16 @@ impl Browser {
         Ok(())
     }
 
-    pub async fn wheel(&self, x: f64, y: f64, dx: f64, dy: f64) -> Result<(), String> {
-        let (cx, cy) = self.to_css(x, y);
+    pub async fn wheel(
+        &self,
+        x: f64,
+        y: f64,
+        dx: f64,
+        dy: f64,
+        img_w: f64,
+        img_h: f64,
+    ) -> Result<(), String> {
+        let (cx, cy) = self.to_css(x, y, img_w, img_h);
         self.call(
             "Input.dispatchMouseEvent",
             json!({"type": "mouseWheel", "x": cx, "y": cy, "deltaX": dx, "deltaY": dy}),
@@ -780,6 +826,27 @@ impl Browser {
 
     /// Attach the first tab whenever Chrome shows up and nothing is
     /// attached yet. (Go: maintainBrowser, 2 s.)
+    /// Keep the picture alive when the page does not paint.
+    ///
+    /// A minimized window or a tab that is not the active one stops the
+    /// screencast: the client would stare at a frozen picture and its
+    /// clicks would land on a page that moved on. Capturing a still
+    /// instead keeps the remote view working.
+    pub async fn poll_frames(self: Arc<Self>) {
+        let mut tick = tokio::time::interval(Duration::from_millis(300));
+        loop {
+            tick.tick().await;
+            if self.current_target().is_empty() {
+                continue;
+            }
+            let last = self.state.lock().unwrap().last_screencast_ms;
+            if last > 0 && now_ms().saturating_sub(last) < 900 {
+                continue; // the screencast is alive
+            }
+            self.send_still().await;
+        }
+    }
+
     pub async fn maintain(self: Arc<Self>) {
         let mut tick = tokio::time::interval(Duration::from_secs(2));
         loop {
@@ -792,8 +859,8 @@ impl Browser {
                     }
                 }
             }
-            // Chrome in the background: the screen is frozen, so say so
-            // instead of letting the phone look at a stale frame.
+            // A page in the background paints slower, but the poll
+            // keeps the picture coming, so this is only a hint.
             if !self.current_target().is_empty() {
                 let hidden = self.is_hidden().await;
                 if self.hub.set_paused(hidden) {

@@ -579,12 +579,12 @@ impl Hub {
 
         match m.typ.as_str() {
             "mouse" => {
-                if b.mouse(&m.action, m.x, m.y, &m.button).await.is_err() {
+                if b.mouse(&m.action, m.x, m.y, &m.button, m.iw, m.ih).await.is_err() {
                     self.send_err(id, "mouse failed");
                 }
             }
             "wheel" => {
-                if b.wheel(m.x, m.y, m.dx, m.dy).await.is_err() {
+                if b.wheel(m.x, m.y, m.dx, m.dy, m.iw, m.ih).await.is_err() {
                     self.send_err(id, "wheel failed");
                 }
             }
@@ -775,5 +775,10 @@ struct ClientMsg {
     height: Option<i64>,
     /// Device pixel ratio of the client view.
     dpr: Option<f64>,
+    /// The size of the image the client shows (frame pixels). With it
+    /// the click maps onto the page exactly, whatever the frame scale
+    /// turned out to be.
+    iw: f64,
+    ih: f64,
     t: i64,
 }
