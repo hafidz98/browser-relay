@@ -97,6 +97,8 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
 
     match path.as_str() {
         "/" => {
+            // The client opens on its beranda (home) view - the remote
+            // screen is one tap away from there.
             respond(&mut stream, "200 OK", "text/html; charset=utf-8", INDEX_HTML).await;
         }
         "/app.js" => {

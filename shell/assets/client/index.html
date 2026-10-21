@@ -6,9 +6,17 @@
 <title>browser-relay</title>
 <style>
   :root {
-    --panel: #1e1e1e; --raised: #262626; --active: #2f2f2f; --border: #303030;
-    --text: #dadada; --muted: #9a9a9a; --faint: #6b6b6b;
+    --bg: #0b0b0b; --panel: #1e1e1e; --raised: #262626; --active: #2f2f2f; --border: #303030;
+    --text: #dadada; --muted: #9a9a9a; --faint: #767676;
     --accent: #8b72f0; --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --field: #141414; --chip: rgba(20,20,20,.78); --sheet-line: #3d3d3d; --scrim: rgba(0,0,0,.6);
+  }
+  /* Light theme: set by the theme toggle (or the OS on first visit). */
+  :root[data-theme="light"] {
+    --bg: #f3f3f4; --panel: #ffffff; --raised: #eeeef0; --active: #e3e3e7; --border: #d9d9de;
+    --text: #17171a; --muted: #56565f; --faint: #6b6b74;
+    --accent: #6b4fe0; --green: #1f7a37; --yellow: #a76a12; --red: #c0392b;
+    --field: #f7f7f8; --chip: rgba(255,255,255,.9); --sheet-line: #d2d2d7; --scrim: rgba(0,0,0,.35);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   button:focus-visible, .tool:focus-visible, .iconbtn:focus-visible {
@@ -21,13 +29,13 @@
   body { position: fixed; inset: 0; width: 100%; overscroll-behavior: none; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    background: #000; color: var(--text); font-size: 14px;
+    background: var(--bg); color: var(--text); font-size: 14px;
   }
 
   /* ===== fullscreen viewport (the remote Chrome page) ===== */
   #screen {
     position: absolute; inset: 0; width: 100%; height: 100%;
-    object-fit: contain; display: block; background: #000;
+    object-fit: contain; display: block; background: var(--bg);
     user-select: none; -webkit-user-select: none; cursor: default;
     touch-action: none; -webkit-touch-callout: none;
   }
@@ -35,7 +43,7 @@
   /* ===== latency + status pills ===== */
   #latency {
     position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; z-index: 5;
-    background: rgba(20,20,20,.72); color: #e8e8e8;
+    background: var(--chip); color: var(--text);
     font-size: 11px; padding: 4px 9px; border-radius: 999px;
     display: flex; gap: 5px; align-items: center;
     font-variant-numeric: tabular-nums;
@@ -46,7 +54,7 @@
   /* which PC this client drives */
   #peer {
     position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; z-index: 5; display: none;
-    background: rgba(20,20,20,.72); color: var(--muted);
+    background: var(--chip); color: var(--muted);
     font-size: 11px; padding: 4px 10px; border-radius: 999px;
     max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     display: none; align-items: center; gap: 6px;
@@ -57,7 +65,7 @@
   #latency.bad i { background: var(--red); }
   #status {
     position: absolute; top: max(10px, env(safe-area-inset-top)); right: 88px; z-index: 5;
-    background: rgba(20,20,20,.72); color: var(--muted);
+    background: var(--chip); color: var(--muted);
     font-size: 11px; padding: 4px 9px; border-radius: 999px;
     display: flex; align-items: center; gap: 6px;
   }
@@ -72,7 +80,7 @@
     pointer-events: none; text-align: center;
   }
   #browserDown .bd-card {
-    background: rgba(30,30,30,.94); border: 1px solid var(--border);
+    background: var(--panel); border: 1px solid var(--border);
     border-radius: 18px; padding: 22px 24px; max-width: 340px;
     box-shadow: 0 16px 44px rgba(0,0,0,.5);
   }
@@ -125,7 +133,7 @@
   #fab.open .ico-grid { display: none; }
   #fab.open .ico-close { display: block; stroke: var(--muted); }
 
-  #backdrop { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.6); opacity: 0; pointer-events: none; transition: opacity .22s; }
+  #backdrop { position: absolute; inset: 0; z-index: 10; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .22s; }
   body.sheet-open #backdrop { opacity: 1; pointer-events: auto; }
 
   /* ===== tools sheet ===== */
@@ -138,7 +146,7 @@
     box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
   }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
-  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: #3d3d3d;
+  #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--sheet-line);
     margin: 2px auto 10px; cursor: grab; touch-action: none; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
   .sheet-head .t { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
@@ -150,7 +158,7 @@
   .addr { display: flex; gap: 8px; align-items: center; }
   .addr .url {
     flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
-    background: #141414; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--field); border: 1px solid var(--border); border-radius: 999px;
     padding: 12px 15px; font-size: 13px; color: var(--text); cursor: pointer;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 44px;
   }
@@ -178,7 +186,7 @@
   .tab span:not(.fav):not(.x) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tab .x { flex: 0 0 auto; opacity: .6; font-size: 14px; line-height: 1; margin-left: 1px; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
   .tab .x:hover { background: rgba(255,255,255,.12); opacity: 1; }
-  #newtab { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 1px dashed #454545;
+  #newtab { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 1px dashed var(--border);
     background: transparent; color: var(--muted); font-size: 17px; cursor: pointer; }
   #newtab:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -204,21 +212,19 @@
   .tool.danger.primary:hover { background: rgba(248,81,73,.26); }
 
   /* ===== auth ===== */
-  #auth {
-    position: fixed; inset: 0; z-index: 40; display: flex;
-    align-items: center; justify-content: center; padding: 24px;
-    background: #161616;
+  /* The pairing UI lives inside the home screen's connection card, so the
+     landing page and the pairing flow are one screen. */
+  #auth { display: flex; flex-direction: column; gap: 10px; }
+  #auth p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  #auth button {
+    width: 100%; padding: 13px 16px; border-radius: 11px; border: none; cursor: pointer;
+    font: inherit; font-size: 14px; font-weight: 650;
   }
-  #auth .card {
-    width: 100%; max-width: 340px; background: var(--panel);
-    border: 1px solid var(--border); border-radius: 18px; padding: 30px 26px;
-    text-align: center; box-shadow: 0 24px 70px rgba(0,0,0,.55);
-  }
-  #auth .dot { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); margin: 0 auto 16px; }
-  #auth h1 { margin: 0 0 6px; font-size: 19px; }
-  #auth p { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  #auth button.primary { background: var(--accent); color: #fff; }
+  #auth button.primary:disabled { opacity: .6; cursor: default; }
+  #auth button.secondary { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
   #token {
-    width: 100%; padding: 14px; font-size: 30px; text-align: center;
+    width: 100%; padding: 13px; font-size: 26px; text-align: center;
     letter-spacing: 10px; text-indent: 10px; font-weight: 700;
     color: var(--text); background: #141414;
     border: 1px solid var(--border); border-radius: 12px; outline: none;
@@ -265,7 +271,7 @@
     position: absolute; left: 50%;
     bottom: calc(96px + env(safe-area-inset-bottom));
     transform: translateX(-50%) translateY(8px); z-index: 35;
-    background: rgba(28,28,28,.94); color: var(--text); border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
     padding: 8px 15px; border-radius: 999px; font-size: 12.5px; opacity: 0; pointer-events: none;
     transition: opacity .2s, transform .2s; white-space: nowrap;
   }
@@ -273,17 +279,17 @@
 
   #hint {
     position: absolute; left: 12px; bottom: 20px; z-index: 5; max-width: 270px;
-    background: rgba(20,20,20,.78); border: 1px solid rgba(255,255,255,.08);
+    background: var(--chip); border: 1px solid var(--border);
     border-radius: 10px; padding: 8px 11px;
-    color: rgba(255,255,255,.92); font-size: 12px; line-height: 1.45; transition: opacity .4s;
+    color: var(--text); font-size: 12px; line-height: 1.45; transition: opacity .4s;
   }
   body.sheet-open #hint { opacity: 0; }
 
   #kbd { position: fixed; bottom: 0; left: 0; width: 10px; height: 10px; opacity: 0; border: none; }
 
-  /* ===== home (beranda) ===== */
+  /* ===== home (home screen) ===== */
   #home {
-    position: absolute; inset: 0; z-index: 6; background: #161616; color: var(--text);
+    position: absolute; inset: 0; z-index: 6; background: var(--bg); color: var(--text);
     overflow-y: auto; transform: translateY(102%); transition: transform .28s cubic-bezier(.32,.72,.35,1);
     padding-bottom: 40px;
   }
@@ -347,14 +353,95 @@
   #homeDlg label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 6px; }
   #homeDlg input {
     width: 100%; padding: 11px 13px; font-size: 14px; color: var(--text);
-    background: #141414; border: 1px solid var(--border); border-radius: 10px; outline: none; font-family: inherit;
+    background: var(--field); border: 1px solid var(--border); border-radius: 10px; outline: none; font-family: inherit;
   }
   #homeDlg input:focus { border-color: var(--accent); }
   #homeDlg .dlg-actions { display: flex; gap: 10px; margin-top: 18px; }
   #homeDlg .dlg-actions button { flex: 1; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
   #homeDlgCancel { background: var(--raised); color: var(--text); border: 1px solid var(--border); }
   #homeDlgOk { background: var(--accent); color: #fff; border: none; }
+
+  /* ===== home screen ===== */
+  #home .home-title { flex: 1; min-width: 0; }
+  #home header h1 { margin: 0; font-size: 20px; }
+  #home header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .home-grid { display: grid; gap: 14px; padding: 14px 16px 28px; }
+  @media (min-width: 900px) {
+    .home-grid { grid-template-columns: 340px 1fr; gap: 22px; align-items: start; max-width: 1080px; margin: 0 auto; }
+    #home header { max-width: 1080px; margin: 0 auto; }
+    #homeGrid { grid-template-columns: repeat(6, 1fr); }
+  }
+  #pairCard { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+  #pairCard h3 { margin: 0 0 10px; font-size: 14.5px; }
+  #pairCard .steps { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  #pairCard .steps i { color: var(--faint); font-style: normal; }
+  #pairCard .steps span.on { color: var(--green); }
+  #openRemote { width: 100%; margin-top: 10px; padding: 13px 16px; border-radius: 11px;
+    border: 1px solid var(--border); background: var(--raised); color: var(--text);
+    font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+
+  /* ===== tool groups ===== */
+  .group { margin-top: 10px; }
+  .group-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--faint); margin: 0 2px 6px; }
+  .group .grid { margin-top: 0; }
+  .tool.toggle { flex-direction: column; }
+  .tool.toggle.on { color: var(--accent); }
+
+  /* ===== clean view (hide the client chrome) ===== */
+  body.clean #status, body.clean #latency, body.clean #peer,
+  body.clean #fab, body.clean #hint { opacity: 0; pointer-events: none; }
+  #cleanExit { position: absolute; top: max(10px, env(safe-area-inset-top)); right: 12px; z-index: 6;
+    display: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--chip); color: var(--text); align-items: center; justify-content: center; cursor: pointer; }
+  body.clean #cleanExit { display: flex; }
+  #cleanExit svg { width: 15px; height: 15px; stroke: currentColor; }
+
+  /* ===== keyboard shortcuts ===== */
+  #shortcuts { position: fixed; inset: 0; z-index: 36; display: none; background: var(--scrim);
+    align-items: center; justify-content: center; padding: 20px; }
+  #shortcuts.open { display: flex; }
+  #shortcuts .sc-body { width: 100%; max-width: 360px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+  #shortcuts h3 { margin: 0 0 12px; font-size: 15px; }
+  #shortcuts .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+    font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  #shortcuts .row:last-child { border-bottom: none; }
+  #shortcuts kbd { background: var(--raised); border: 1px solid var(--border); border-radius: 6px;
+    padding: 2px 7px; font-size: 12px; color: var(--text); font-family: inherit; }
+
+  /* ===== desktop: the tools sheet becomes a permanent sidebar ===== */
+  @media (min-width: 900px) {
+    #toolsheet {
+      position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 320px; height: 100%;
+      transform: none !important; border-radius: 0; overflow-y: auto; z-index: 30;
+      padding: 16px 16px 24px; border-right: 1px solid var(--border);
+    }
+    #toolsheet .grip, #toolsheet .sheet-close { display: none; }
+    body.sheet-open #backdrop { display: none; }
+    #fab { display: none; }
+    #screen { left: 320px; }
+    #peer { left: 332px; }
+    #hint { display: none; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
+<script>
+  // Set the theme before the first paint (no flash). The toggle in the
+  // tools sheet overrides it later; until then the OS decides.
+  (function () {
+    try {
+      var saved = localStorage.getItem("br_theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        document.documentElement.setAttribute("data-theme", "light");
+      } else {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
 
@@ -401,20 +488,39 @@
     </div>
   </div>
   <div class="tabs" id="tabs"></div>
-  <div class="grid">
-    <button class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
-    <button class="tool" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M9 5l7 7-7 7"/></svg>Forward</button>
-    <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</button>
-    <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
-    <button class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span id="desktopLabel">Desktop</span></button>
-    <button class="tool" data-act="zoom"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg><span id="zoomLabel">Zoom</span></button>
-    <button class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5h9M4 10h7M4 15h9"/><circle cx="16.5" cy="15.5" r="4.5"/><path d="M20 19l-1.8-1.8"/></svg>Find</button>
-    <button class="tool" data-act="settings"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+  <div class="group"><div class="group-label">Navigate</div>
+    <div class="grid">
+      <button class="tool" data-act="back"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
+      <button class="tool" data-act="forward"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M9 5l7 7-7 7"/></svg>Forward</button>
+    </div>
+  </div>
+  <div class="group"><div class="group-label">Screen</div>
+    <div class="grid">
+      <button class="tool" data-act="desktop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span id="desktopLabel">Desktop</span></button>
+      <button class="tool" data-act="zoom"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg><span id="zoomLabel">Zoom</span></button>
+      <button class="tool" data-act="find"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5h9M4 10h7M4 15h9"/><circle cx="16.5" cy="15.5" r="4.5"/><path d="M20 19l-1.8-1.8"/></svg>Find</button>
+    </div>
+  </div>
+  <div class="group"><div class="group-label">Input</div>
+    <div class="grid">
+      <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</button>
+      <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
+      <button class="tool" data-act="sendclip"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="1.5"/></svg>Send clipboard</button>
+    </div>
+  </div>
+  <div class="group"><div class="group-label">View</div>
+    <div class="grid">
+      <button class="tool toggle" id="themeToggle"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light theme</button>
+      <button class="tool toggle" id="cleanToggle"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>Clean view</button>
+      <button class="tool toggle" id="reconnectBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Reconnect</button>
+      <button class="tool toggle" id="shortcutsBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Shortcuts</button>
+    </div>
   </div>
   <div class="danger-label">Session</div>
   <div class="grid danger">
     <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
     <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+  </div>
   </div>
 </div>
 
@@ -424,18 +530,26 @@
   <svg class="ico-close" viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
 </div>
 
-<div id="toast"></div>
+<div id="cleanExit" role="button" aria-label="Show the controls">
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</div>
 
-<div id="auth"><div class="card">
-  <div class="dot"></div>
-  <h1>browser-relay</h1>
-  <p id="authDesc">Menghubungkan…</p>
-  <input id="token" type="text" inputmode="numeric" autocomplete="one-time-code"
-         maxlength="6" placeholder="••••••" style="display:none">
-  <button id="go" class="primary" style="display:none">Connect</button>
-  <button id="reqCode" class="primary" style="display:none">Request Pairing Code</button>
-  <div id="authErr"></div>
+<div id="shortcuts"><div class="sc-body">
+  <h3>Keyboard shortcuts</h3>
+  <div class="row"><span>Close the sheet / dialog</span><kbd>Esc</kbd></div>
+  <div class="row"><span>Back / forward</span><kbd>← / →</kbd></div>
+  <div class="row"><span>Reload the page</span><kbd>r</kbd></div>
+  <div class="row"><span>Find in page</span><kbd>f</kbd></div>
+  <div class="row"><span>Type into the page</span><kbd>k</kbd></div>
+  <div class="row"><span>Paste the laptop clipboard</span><kbd>p</kbd></div>
+  <div class="row"><span>Copy the page link</span><kbd>c</kbd></div>
+  <div class="row"><span>Switch mobile / desktop view</span><kbd>m</kbd></div>
+  <div class="row"><span>Clean view (hide the controls)</span><kbd>l</kbd></div>
+  <div class="row"><span>Light / dark theme</span><kbd>t</kbd></div>
+  <div class="row"><span>This list</span><kbd>?</kbd></div>
 </div></div>
+
+<div id="toast"></div>
 
 <div id="prompt"><div class="prompt-body">
   <div id="promptTitle"></div>
@@ -450,44 +564,51 @@
 
 <div id="home">
   <header>
-    <button id="homeBack" aria-label="Kembali">‹</button>
-    <div><h1>Beranda</h1><p>Shortcut ke situs favoritmu</p></div>
+    <div class="home-title">
+      <h1>Home</h1>
+      <p>Shortcuts and the PC connection</p>
+    </div>
     <button id="homeEdit">Edit</button>
   </header>
-  <!-- Pairing card (mirip aplikasi native) -->
-  <div id="pairCard">
-    <h3>Connect to PC</h3>
-    <div class="steps"><span>○ Server</span><i>→</i><span>○ Chrome</span><i>→</i><span>○ Siap</span></div>
-    <p class="lbl">Pilih cara pairing:</p>
-    <label>Server (host:port)</label>
-    <input id="pairHost" placeholder="192.168.1.14:8765" inputmode="url">
-    <button id="pairReqBtn" class="primary">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      REQUEST PAIRING CODE
-    </button>
-    <label>Code from the PC panel (6 digits)</label>
-    <input id="pairCode" placeholder="••••••" inputmode="numeric" maxlength="6">
-    <button id="pairGoBtn" class="secondary">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      HUBUNGKAN
-    </button>
-    <p class="hint">or scan the QR from the PC panel — it opens automatically</p>
+
+  <div class="home-grid">
+    <!-- Connection card: this is also the pairing flow -->
+    <div id="pairCard">
+      <h3>Connect to this PC</h3>
+      <div class="steps">
+        <span id="stServer">○ Server</span><i>→</i>
+        <span id="stChrome">○ Chrome</span><i>→</i>
+        <span id="stReady">○ Ready</span>
+      </div>
+      <div id="auth">
+        <p id="authDesc">Connecting…</p>
+        <input id="token" type="text" inputmode="numeric" autocomplete="one-time-code"
+               maxlength="6" placeholder="••••••" style="display:none">
+        <button id="go" class="primary" style="display:none">Connect</button>
+        <button id="reqCode" class="primary" style="display:none">Request a pairing code</button>
+        <div id="authErr"></div>
+      </div>
+      <button id="openRemote" class="secondary" style="display:none">Open the remote view</button>
+    </div>
+
+    <div class="home-side">
+      <div class="searchbar"><div class="box" id="homeSearch">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <span>Search or type URL…</span>
+      </div></div>
+      <div class="section"><h2>Shortcuts</h2></div>
+      <div id="homeGrid"></div>
+    </div>
   </div>
-  <div class="searchbar"><div class="box" id="homeSearch">
-    <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-    <span>Search or type URL…</span>
-  </div></div>
-  <div class="section"><h2>Aplikasi</h2></div>
-  <div id="homeGrid"></div>
 </div>
 
 <div id="homeDlg"><div class="dlg-body">
-  <h3>Tambah shortcut</h3>
+  <h3>Add shortcut</h3>
   <p>Saved on this device.</p>
-  <label>Nama</label>
-  <input id="homeDlgName" placeholder="cth: Facebook" maxlength="24">
+  <label>Name</label>
+  <input id="homeDlgName" placeholder="e.g. Facebook" maxlength="24">
   <label>URL</label>
-  <input id="homeDlgUrl" placeholder="cth: facebook.com" inputmode="url">
+  <input id="homeDlgUrl" placeholder="e.g. facebook.com" inputmode="url">
   <div class="dlg-actions">
     <button id="homeDlgCancel">Cancel</button>
     <button id="homeDlgOk">Save</button>

@@ -27,6 +27,8 @@
   var deviceName = "Web client";
   // Single-use QR code from ?code= (consumed on first connect).
   var qrCode = null;
+// A QR scan means the user wants the screen, not the home screen.
+var qrScanned = false;
 
   var authDesc = document.getElementById("authDesc");
   var reqBtn = document.getElementById("reqCode");
@@ -76,9 +78,9 @@
     }
     if (ws && ws.readyState === 1) {
       goBtn.disabled = true;
-      goBtn.textContent = "Menghubungkan…";
+      goBtn.textContent = "Connecting…";
       ws.send(JSON.stringify({ type: "auth", token: code, fingerprint: fingerprint, name: deviceName }));
-      authDesc.textContent = "Menghubungkan…";
+      authDesc.textContent = "Connecting…";
       authErr.textContent = "";
     } else {
       authErr.textContent = "Connection lost — waiting a moment, then retrying";
@@ -92,6 +94,49 @@
   function setStatus(s, cls) {
     status.textContent = s;
     status.className = cls || "";
+  }
+
+  // ---- views: the home screen is the entry point, the remote screen is
+  // one tap away from there ----
+  function openHome() { document.body.classList.add("home-open"); }
+  function closeHome() {
+    document.body.classList.remove("home-open", "home-editing");
+    var edit = document.getElementById("homeEdit");
+    if (edit) { edit.classList.remove("on"); edit.textContent = "Edit"; }
+  }
+  // The three dots in the home screen's connection card.
+  function updateSteps() {
+    var set = function (id, on) {
+      var el = document.getElementById(id);
+      if (el) { el.textContent = (on ? "● " : "○ ") + el.textContent.slice(2); el.classList.toggle("on", !!on); }
+    };
+    var serverUp = ws && ws.readyState === 1;
+    set("stServer", serverUp);
+    set("stChrome", browserUp);
+    set("stReady", authed);
+    var open = document.getElementById("openRemote");
+    if (open) open.style.display = authed ? "block" : "none";
+  }
+
+  // ---- theme ----
+  function currentTheme() { return document.documentElement.getAttribute("data-theme") || "dark"; }
+  function setTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem("br_theme", theme); } catch (e) {}
+    var btn = document.getElementById("themeToggle");
+    if (btn) {
+      btn.classList.toggle("on", theme === "light");
+      var span = btn.querySelector("span");
+      if (span) span.textContent = theme === "light" ? "Dark theme" : "Light theme";
+    }
+  }
+  function toggleTheme() { setTheme(currentTheme() === "light" ? "dark" : "light"); }
+
+  // ---- clean view: hide the client chrome for a bare remote screen ----
+  function setClean(on) {
+    document.body.classList.toggle("clean", !!on);
+    var btn = document.getElementById("cleanToggle");
+    if (btn) btn.classList.toggle("on", !!on);
   }
 
   var browserDownEl = document.getElementById("browserDown");
@@ -192,6 +237,9 @@
             peer.style.display = "flex";
           }
           if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
+          updateSteps();
+          // A QR scan means "show me the screen" - go straight there.
+          if (qrScanned) { qrScanned = false; closeHome(); }
           // Auto-set emulation mode on first connect based on device type.
           // Mobile devices get mobile emulation; desktop gets desktop mode.
           // This ensures the emulation matches the current client, not a
@@ -258,6 +306,9 @@
     };
     ws.onclose = function () {
       authed = false;
+      openHome();
+      if (authDesc) authDesc.textContent = "Connection lost — reconnecting…";
+      updateSteps();
       latencyMs.textContent = "— ms";
       latencyEl.className = "pending";
       showBrowserDown(false);
@@ -272,6 +323,14 @@
   function renderTabs(tabs) {
     tabsEl.innerHTML = "";
     var activeUrl = "—";
+    // The same target can arrive twice (a tab that re-attached) - show
+    // each tab once.
+    var seen = {};
+    var unique = [];
+    tabs.forEach(function (t) {
+      if (t && t.id && !seen[t.id]) { seen[t.id] = true; unique.push(t); }
+    });
+    tabs = unique;
     tabs.forEach(function (t) {
       if (t.active) activeUrl = t.url || t.title || "—";
       var d = document.createElement("div");
@@ -513,6 +572,62 @@
   });
   armIdle();
   document.getElementById("sheetClose").onclick = function () { toggleSheet(false); };
+  // View controls
+  var themeToggle = document.getElementById("themeToggle");
+  if (themeToggle) themeToggle.onclick = function () { toggleTheme(); if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} } };
+  var cleanToggle = document.getElementById("cleanToggle");
+  if (cleanToggle) cleanToggle.onclick = function () { setClean(!document.body.classList.contains("clean")); };
+  var cleanExit = document.getElementById("cleanExit");
+  if (cleanExit) cleanExit.onclick = function () { setClean(false); };
+  var reconnectBtn = document.getElementById("reconnectBtn");
+  if (reconnectBtn) reconnectBtn.onclick = function () {
+    toast("Reconnecting…");
+    try { if (ws) ws.close(); } catch (e) {}
+    setTimeout(connect, 120);
+  };
+  var shortcutsBtn = document.getElementById("shortcutsBtn");
+  var shortcutsDlg = document.getElementById("shortcuts");
+  if (shortcutsBtn && shortcutsDlg) {
+    shortcutsBtn.onclick = function () { shortcutsDlg.classList.add("open"); };
+    shortcutsDlg.onclick = function (e) { if (e.target === shortcutsDlg) shortcutsDlg.classList.remove("open"); };
+  }
+  var openRemote = document.getElementById("openRemote");
+  if (openRemote) openRemote.onclick = function () { closeHome(); };
+
+  // Keyboard shortcuts (desktop): they mirror the tool buttons.
+  document.addEventListener("keydown", function (e) {
+    var tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || (e.target && e.target.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "c" || e.key === "C")) {
+        // Copy the page link (we own the button, so copy it ourselves).
+        var link = window.__activeUrl || "";
+        if (link && link !== "—" && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(link).then(function () { toast("Link copied"); },
+            function () { toast("Could not copy the link"); });
+          e.preventDefault();
+        }
+      }
+      return;
+    }
+    switch (e.key) {
+      case "Escape":
+        if (shortcutsDlg && shortcutsDlg.classList.contains("open")) { shortcutsDlg.classList.remove("open"); e.preventDefault(); }
+        else if (document.body.classList.contains("home-open")) { closeHome(); e.preventDefault(); }
+        else if (document.body.classList.contains("sheet-open")) { toggleSheet(false); e.preventDefault(); }
+        break;
+      case "ArrowLeft": doAction("back"); e.preventDefault(); break;
+      case "ArrowRight": doAction("forward"); e.preventDefault(); break;
+      case "r": doAction("reload"); break;
+      case "f": doAction("find"); break;
+      case "k": doAction("keyboard"); break;
+      case "p": doAction("paste"); break;
+      case "m": doAction("desktop"); break;
+      case "l": setClean(!document.body.classList.contains("clean")); break;
+      case "t": toggleTheme(); break;
+      case "?": if (shortcutsDlg) { shortcutsDlg.classList.toggle("open"); e.preventDefault(); } break;
+    }
+  });
   // Drag the grip down to dismiss - the grip looks draggable, so it
   // should be.
   (function () {
@@ -540,6 +655,8 @@
   // gesture belongs to the page, not to the client chrome.
 
   // --- tools sheet actions ---
+  // (The "+" button in the tab strip is built in renderTabs and
+  // already opens a new tab with a URL.)
   document.getElementById("urlBar").onclick = function () {
     openPrompt("Open URL", "https://", "https://example.com", "Open", function (u) {
       u = (u || "").trim();
@@ -566,7 +683,8 @@
   var desktopLabel = document.getElementById("desktopLabel");
   function setDesktop(on) {
     desktopBtn.classList.toggle("on", !!on);
-    desktopLabel.textContent = on ? "Mobile" : "Desktop";
+    // Say which view you are in (the button switches to the other one).
+    desktopLabel.textContent = on ? "Mobile view" : "Desktop view";
   }
 
   var zoomLevels = [100, 125, 150], zoomIdx = 0;
@@ -578,47 +696,59 @@
     zoomLabel.textContent = z === 100 ? "Zoom" : z + "%";
   }
 
+  function doAction(act) {
+    if (navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+    if (act === "back") send({ type: "history", action: "back" });
+    else if (act === "reload") send({ type: "tab", action: "reload" });
+    else if (act === "forward") send({ type: "history", action: "forward" });
+    else if (act === "keyboard") { kbd.focus(); toast("Type — keys go to the page"); }
+    else if (act === "paste") {
+      // Fetch the laptop clipboard into the prompt; editing +
+      // Send pushes it back (then Ctrl+V in the page pastes it).
+      send({ type: "clipboard", action: "get" });
+    }
+    else if (act === "sendclip") {
+      // The other direction: put the phone clipboard on the laptop.
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        toast("Clipboard not available on this browser"); return;
+      }
+      navigator.clipboard.readText().then(function (txt) {
+        if (!txt) { toast("Phone clipboard is empty"); return; }
+        send({ type: "clipboard", action: "set", text: txt });
+        toast("Sent to the laptop clipboard");
+      }, function () { toast("Clipboard permission denied"); });
+    }
+    else if (act === "desktop") {
+      var on = !desktopBtn.classList.contains("on");
+      send({ type: "emulation", mobile: on, width: 390, height: 844 });
+    }
+    else if (act === "zoom") {
+      zoomIdx = (zoomIdx + 1) % zoomLevels.length;
+      applyZoom();
+    }
+    else if (act === "find") {
+      openPrompt("Find in page", "", "Search text…", "Find", function (q) {
+        if ((q || "").trim()) send({ type: "find", text: q.trim() });
+      });
+    }
+    else if (act === "chrome-stop") {
+      if (!browserUp) { toast("Chrome is not running"); return; }
+      if (confirm("Stop Chrome on the laptop?")) send({ type: "chrome", action: "close" });
+    }
+    else if (act === "disconnect") {
+      // Clear pairing and reload to the pairing screen. This forgets
+      // the device on the PC as well, so confirm first.
+      if (!confirm("Disconnect and forget this device?")) return;
+      try { localStorage.removeItem("br_fingerprint"); } catch (e) {}
+      if (ws) ws.close();
+      location.reload();
+    }
+  }
   document.querySelectorAll("[data-act]").forEach(function (el) {
-    el.addEventListener("click", function () {
-      var act = el.dataset.act;
-      if (act === "back") send({ type: "history", action: "back" });
-      else if (act === "forward") send({ type: "history", action: "forward" });
-      else if (act === "keyboard") { kbd.focus(); toast("Type — keys go to the page"); }
-      else if (act === "paste") {
-        // Fetch the laptop clipboard into the prompt; editing +
-        // Send pushes it back (then Ctrl+V in the page pastes it).
-        send({ type: "clipboard", action: "get" });
-      }
-      else if (act === "desktop") {
-        var on = !desktopBtn.classList.contains("on");
-        send({ type: "emulation", mobile: on, width: 390, height: 844 });
-      }
-      else if (act === "zoom") {
-        zoomIdx = (zoomIdx + 1) % zoomLevels.length;
-        applyZoom();
-      }
-      else if (act === "find") {
-        openPrompt("Find in page", "", "Search text…", "Find", function (q) {
-          if ((q || "").trim()) send({ type: "find", text: q.trim() });
-        });
-      }
-      else if (act === "chrome-stop") {
-        if (!browserUp) { toast("Chrome is not running"); return; }
-        if (confirm("Stop Chrome on the laptop?")) send({ type: "chrome", action: "close" });
-      }
-      else if (act === "disconnect") {
-        // Clear pairing and reload to the pairing screen. This forgets
-        // the device on the PC as well, so confirm first.
-        if (!confirm("Disconnect and forget this device?")) return;
-        try { localStorage.removeItem("br_fingerprint"); } catch (e) {}
-        if (ws) ws.close();
-        location.reload();
-      }
-      else if (act === "settings") toast("Settings — coming soon");
-    });
+    el.addEventListener("click", function () { doAction(el.dataset.act); });
   });
 
-  // --- home (beranda): shortcut grid ---
+  // --- home (home screen): shortcut grid ---
   (function () {
     var grid = document.getElementById("homeGrid");
     var ICONS = {
@@ -665,12 +795,6 @@
       toggleSheet(false);
     }
     window.__brOpenHome = openHome;
-    function openHome() { document.body.classList.add("home-open"); }
-    function closeHome() {
-      document.body.classList.remove("home-open", "home-editing");
-      document.getElementById("homeEdit").classList.remove("on");
-      document.getElementById("homeEdit").textContent = "Edit";
-    }
     function render() {
       grid.innerHTML = "";
       shortcuts.forEach(function (s, i) {
@@ -681,7 +805,7 @@
         b.querySelector(".del").onclick = function (e) {
           e.stopPropagation();
           shortcuts.splice(i, 1); save(); render();
-          toast("Shortcut dihapus");
+          toast("Shortcut removed");
         };
         b.onclick = function () {
           if (document.body.classList.contains("home-editing")) return;
@@ -706,28 +830,27 @@
     document.getElementById("homeDlgOk").onclick = function () {
       var name = document.getElementById("homeDlgName").value.trim();
       var url = document.getElementById("homeDlgUrl").value.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
-      if (!name) { toast("Isi namanya dulu"); return; }
+      if (!name) { toast("Enter a name first"); return; }
       if (!url || url.indexOf(".") < 0) { toast("Invalid URL"); return; }
       shortcuts.push({ name: name, url: url });
       save(); render();
       document.getElementById("homeDlg").classList.remove("open");
-      toast("Shortcut tersimpan");
+      toast("Shortcut saved");
     };
     document.getElementById("homeEdit").onclick = function () {
       var on = document.body.classList.toggle("home-editing");
       this.classList.toggle("on", on);
-      this.textContent = on ? "Selesai" : "Edit";
+      this.textContent = on ? "Done" : "Edit";
     };
     document.getElementById("homeSearch").onclick = function () {
-      openPrompt("Buka URL", "https://", "https://example.com", "Buka", openUrl);
+      openPrompt("Open URL", "https://", "https://example.com", "Open", openUrl);
     };
     document.getElementById("homeBtn").onclick = function () {
       toggleSheet(false);
       openHome();
     };
-    document.getElementById("homeBack").onclick = function () {
-      closeHome();
-    };
+    // (No back button in the home screen header: the home screen is the
+    // entry point. The tools sheet has a Home button to return here.)
     render();
   })();
 
@@ -751,6 +874,7 @@
       // Defer until ws is open; connect() sends fingerprint-only first,
       // so stash the QR code for the onopen handler to prefer.
       qrCode = qp;
+      qrScanned = true;
     }
   } catch (e) {}
 
@@ -759,6 +883,10 @@
   // box based on it — the fingerprint flow shows pairing UI on demand.
   // Clear the stale value so it doesn't confuse future logic.
   try { localStorage.removeItem("br_token"); } catch (e) {}
+  // The home screen is the entry point: the remote screen is one tap away.
+  openHome();
+  setTheme(currentTheme());
+  updateSteps();
   // Always connect — the server tells us if we're unknown (show pairing UI)
   // or welcomes us back (fingerprint reconnect).
   connect();
