@@ -3,3 +3,7 @@
 /shell/target/
 # Built binaries (do not commit; CI publishes them as release assets)
 /relay-*.exe
+
+# Android build output (the CI publishes the APK as a release asset)
+/android/*.apk
+/android/build/

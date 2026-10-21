@@ -118,7 +118,9 @@ jobs:
           generate_release_notes: true
 
   android-apk:
-    if: startsWith(github.ref, 'refs/tags/android-v')
+    # The APK is built on every push, so a broken Android change fails
+    # the build instead of waiting for the next release.
+    name: android-apk
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -130,19 +132,42 @@ jobs:
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Cache the Android SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android
+            ${{ env.ANDROID_SDK_ROOT }}
+          key: android-sdk-${{ runner.os }}
 
       - name: Install platform + build-tools
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Build APK
         run: |
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          bash android/build.sh 24 2.4
+          bash android/build.sh 25 2.5
+
+      # The server serves the APK as /app.apk from a file called
+      # browser-relay.apk, so give the artifact that exact name.
+      - name: Name the APK
+        run: mv android/browserrelay-*.apk android/browser-relay.apk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: browserrelay-apk
-          path: android/browserrelay-*.apk
+          path: android/browser-relay.apk
+
+      - name: Attach the APK to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/browser-relay.apk
+          fail_on_unmatched_files: false
