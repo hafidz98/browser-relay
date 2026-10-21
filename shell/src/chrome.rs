@@ -18,6 +18,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+#[allow(unused_mut)] // mut is only used by the Windows-only cfg below
 fn sys_cmd(program: &str) -> Command {
     let mut c = Command::new(program);
     #[cfg(target_os = "windows")]
@@ -54,6 +55,7 @@ pub fn config_dir() -> PathBuf {
 pub fn host_name() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
+        .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "this PC".to_string())
