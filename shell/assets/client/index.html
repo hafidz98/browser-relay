@@ -10,6 +10,7 @@
     --text: #dadada; --muted: #a2a2a2; --faint: #8a8a8a;
     --accent: #8b72f0; --green: #3fb950; --yellow: #d29922; --red: #f85149;
     --field: #141414; --chip: rgba(20,20,20,.78); --sheet-line: #3d3d3d; --scrim: rgba(0,0,0,.6);
+    --scroll-thumb: rgba(255,255,255,.16); --scroll-thumb-hover: rgba(255,255,255,.30);
   }
   /* Light theme: set by the theme toggle (or the OS on first visit). */
   :root[data-theme="light"] {
@@ -17,6 +18,7 @@
     --text: #17171a; --muted: #56565f; --faint: #6b6b74;
     --accent: #6b4fe0; --green: #1f7a37; --yellow: #a76a12; --red: #c0392b;
     --field: #f7f7f8; --chip: rgba(255,255,255,.9); --sheet-line: #d2d2d7; --scrim: rgba(0,0,0,.35);
+    --scroll-thumb: rgba(0,0,0,.20); --scroll-thumb-hover: rgba(0,0,0,.34);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   button:focus-visible, .tool:focus-visible, .iconbtn:focus-visible {
@@ -306,6 +308,34 @@
 
   #kbd { position: fixed; bottom: 0; left: 0; width: 10px; height: 10px; opacity: 0; border: none; }
 
+  /* ===== scrollbars =====
+     The default Windows scrollbar (with its arrow buttons) breaks the
+     panel look. These are slim, quiet and sit inside the surface. */
+  .rail-body, #home, #shortcuts .sc-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scroll-thumb) transparent;
+  }
+  .rail-body::-webkit-scrollbar,
+  #home::-webkit-scrollbar,
+  #shortcuts .sc-body::-webkit-scrollbar { width: 11px; }
+  .rail-body::-webkit-scrollbar-track,
+  #home::-webkit-scrollbar-track,
+  #shortcuts .sc-body::-webkit-scrollbar-track { background: transparent; }
+  .rail-body::-webkit-scrollbar-thumb,
+  #home::-webkit-scrollbar-thumb,
+  #shortcuts .sc-body::-webkit-scrollbar-thumb {
+    background: var(--scroll-thumb); border-radius: 8px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  .rail-body::-webkit-scrollbar-thumb:hover,
+  #home::-webkit-scrollbar-thumb:hover,
+  #shortcuts .sc-body::-webkit-scrollbar-thumb:hover {
+    background: var(--scroll-thumb-hover); background-clip: content-box;
+  }
+  .rail-body::-webkit-scrollbar-button,
+  #home::-webkit-scrollbar-button,
+  #shortcuts .sc-body::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
   /* ===== home (home screen) ===== */
   #home {
     position: absolute; inset: 0; z-index: 6; background: var(--bg); color: var(--text);
@@ -491,9 +521,7 @@
     }
     #railToggle:hover { color: var(--text); }
     #railToggle svg { width: 15px; height: 15px; stroke: currentColor; }
-    #toolsheet::-webkit-scrollbar { width: 9px; }
-    #toolsheet::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; }
-    #toolsheet::-webkit-scrollbar-track { background: transparent; }
+    #toolsheet .rail-body { padding-right: 2px; }
     #toolsheet .sheet-head .t { color: var(--text); font-size: 15px; font-weight: 700; letter-spacing: .04em; }
     /* Two even columns that fill the rail, aligned with the headers. */
     .group .grid { grid-template-columns: repeat(2, 1fr); gap: 6px 10px; }
