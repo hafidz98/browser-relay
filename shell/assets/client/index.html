@@ -319,8 +319,8 @@
   #home header p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
   #homeEdit {
     border: 1px solid var(--border); background: var(--raised); color: var(--text);
-    border-radius: 999px; padding: 12px 18px; min-height: 44px; font-size: 13px; font-weight: 600; cursor: pointer;
-    font-family: inherit;
+    border-radius: 999px; padding: 8px 14px; min-height: 38px; font-size: 12.5px;
+    font-weight: 600; cursor: pointer; font-family: inherit; flex: 0 0 auto;
   }
   #homeEdit.on { background: rgba(139,114,240,.18); border-color: var(--accent); color: var(--accent); }
   #home .searchbar { padding: 14px 16px 4px; }
@@ -330,9 +330,15 @@
     color: var(--faint); font-size: 14px; cursor: pointer;
   }
   #home .searchbar svg { width: 17px; height: 17px; stroke: var(--faint); flex: 0 0 auto; }
-  #home .section { padding: 10px 16px 0; }
-  #home .section h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 0; text-transform: uppercase; letter-spacing: .6px; }
-  #homeGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 8px; padding: 18px 0 8px; }
+  #home .section {
+    padding: 16px 16px 0; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+  }
+  #home .section h2 {
+    font-size: 13px; font-weight: 600; color: var(--muted); margin: 0;
+    text-transform: uppercase; letter-spacing: .6px;
+  }
+  #homeGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 8px; padding: 18px 16px 8px; }
   #homeGrid .tile {
     display: flex; flex-direction: column; align-items: center; gap: 8px;
     cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; position: relative;
@@ -380,14 +386,34 @@
   .home-grid { display: grid; gap: 14px; padding: 14px 16px calc(28px + env(safe-area-inset-bottom)); }
   .home-side { padding: 0; }
   @media (min-width: 900px) {
+    /* The tools rail is a permanent panel on the desktop - the home
+       screen must not slide under it. */
+    body.home-open #home { left: 300px; }
     .home-grid { grid-template-columns: 340px 1fr; gap: 22px; align-items: start; max-width: 1080px; margin: 0 auto; }
     #home header { max-width: 1080px; margin: 0 auto; }
     #homeGrid { grid-template-columns: repeat(6, 1fr); }
+  }
+  /* Not enough room for two columns next to the rail. */
+  @media (min-width: 900px) and (max-width: 1180px) {
+    .home-grid { grid-template-columns: 1fr; }
+    #homeGrid { grid-template-columns: repeat(5, 1fr); }
   }
   #pairCard { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
   #pairCard h3 { margin: 0 0 10px; font-size: 14.5px; }
   #pairCard .steps { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
   #pairCard .steps i { color: var(--faint); font-style: normal; }
+  #pairCard label {
+    display: block; font-size: 11.5px; color: var(--muted); margin: 10px 0 5px;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  #pairCard input[type="text"] {
+    width: 100%; padding: 12px 14px; font-size: 16px; letter-spacing: .3em;
+    color: var(--text); background: var(--field); border: 1px solid var(--border);
+    border-radius: 11px; outline: none; font-family: inherit;
+  }
+  #pairCard input[type="text"]:focus { border-color: var(--accent); }
+  #pairCard input:disabled { opacity: .5; }
+  #pairCard button.primary { width: 100%; margin-top: 10px; }
   #pairCard .steps span.on { color: var(--green); }
   #openRemote { width: 100%; margin-top: 10px; padding: 13px 16px; border-radius: 11px;
     border: 1px solid var(--border); background: var(--raised); color: var(--text);
@@ -400,6 +426,12 @@
   .group .grid { margin-top: 0; }
   .tool.toggle { flex-direction: column; }
   .tool.toggle.on { color: var(--accent); }
+  .tool:disabled { opacity: .38; cursor: default; pointer-events: none; }
+  .tool:disabled:hover { border-color: var(--border); }
+
+  /* The rail fold controls are desktop-only: on the phone the tools
+     are a sheet, not a permanent panel. */
+  #railOpen, #railToggle { display: none; }
 
   /* ===== clean view (hide the client chrome) ===== */
   body.clean #status, body.clean #latency, body.clean #peer,
@@ -426,12 +458,32 @@
   /* ===== desktop: the tools sheet becomes a permanent sidebar ===== */
   @media (min-width: 900px) {
     #toolsheet {
-      position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 320px; height: 100%;
+      position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 300px; height: 100%;
       max-height: none;
       transform: none !important; border-radius: 0; overflow-y: auto; z-index: 30;
       padding: 16px 16px 24px; border-right: 1px solid var(--border);
     }
     #toolsheet .grip, #toolsheet .sheet-close { display: none; }
+    /* Fold the rail away - the remote screen is the point of the app. */
+    body.rail-collapsed #toolsheet { transform: translateX(-100%) !important; }
+    body.rail-collapsed #screen { left: 0; }
+    body.rail-collapsed #home { left: 0; }
+    body.rail-collapsed #railOpen { display: flex; }
+    #railToggle { display: flex; }
+    #railOpen {
+      display: none; position: fixed; left: 10px; top: 10px; z-index: 40;
+      width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--panel); color: var(--text); align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+    }
+    #railOpen svg { width: 17px; height: 17px; stroke: currentColor; }
+    #railToggle {
+      margin-left: auto; width: 30px; height: 30px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--raised); color: var(--muted);
+      display: flex; align-items: center; justify-content: center; cursor: pointer; flex: 0 0 auto;
+    }
+    #railToggle:hover { color: var(--text); }
+    #railToggle svg { width: 15px; height: 15px; stroke: currentColor; }
     #toolsheet::-webkit-scrollbar { width: 9px; }
     #toolsheet::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; }
     #toolsheet::-webkit-scrollbar-track { background: transparent; }
@@ -449,14 +501,14 @@
       padding: 10px 0 4px; margin-top: 16px;
     }
     #toolsheet .danger-group .grid.danger { margin-top: 0; }
-    /* The address row needs its own line in a 320px rail. */
+    /* The address row needs its own line in the 300px rail. */
     .addr { flex-wrap: wrap; }
     .addr .url { flex: 1 1 100%; }
     /* The empty state belongs to the screen pane, not the whole window. */
-    #browserDown { left: 320px; }
+    #browserDown { left: 300px; }
     body.sheet-open #backdrop { display: none; }
     #fab { display: none; }
-    #screen { left: 320px; }
+    #screen { left: 300px; }
     #peer { left: 332px; }
     #hint { display: none; }
     .grid { grid-template-columns: repeat(2, 1fr); }
@@ -507,7 +559,7 @@
     <button class="sheet-close" id="sheetClose" aria-label="Close tools">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-  </div>
+  <button id="railToggle" title="Hide the tools" aria-label="Hide the tools"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button></div>
   <div class="addr">
     <div class="url" id="urlBar" title="Open URL" role="button" aria-label="Open a URL">
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2.2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
@@ -562,6 +614,7 @@
   </div>
 </div>
 
+<button id="railOpen" title="Show the tools" aria-label="Show the tools"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
 <div id="fab" role="button" aria-label="Open the tools sheet">
   <svg class="ico-grip" viewBox="0 0 24 24" fill="none" stroke-width="2.6"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
   <svg class="ico-grid" viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg>
@@ -606,7 +659,7 @@
       <h1>Home</h1>
       <p>Shortcuts and the PC connection</p>
     </div>
-    <button id="homeEdit">Edit</button>
+    
   </header>
 
   <div class="home-grid">
@@ -620,8 +673,9 @@
       </div>
       <div id="auth">
         <p id="authDesc">Connecting…</p>
+        <label id="tokenLabel" for="token">Pairing code</label>
         <input id="token" type="text" inputmode="numeric" autocomplete="one-time-code"
-               maxlength="6" placeholder="000000" style="display:none">
+               maxlength="6" placeholder="6 digits" style="display:none">
         <button id="go" class="primary" style="display:none">Connect</button>
         <button id="reqCode" class="primary" style="display:none">Request a pairing code</button>
         <div id="authErr"></div>
@@ -634,7 +688,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
         <span>Search or type URL…</span>
       </div></div>
-      <div class="section"><h2>Shortcuts</h2></div>
+      <div class="section"><h2>Shortcuts</h2><button id="homeEdit">Edit</button></div>
       <div id="homeGrid"></div>
     </div>
   </div>

@@ -1,6 +1,6 @@
 # browser-relay WebSocket API
 
-Protocol version: matches server `VERSION` (e.g. `0.9.41`). Breaking changes bump
+Protocol version: matches server `VERSION` (e.g. `0.9.42`). Breaking changes bump
 the minor version and are noted in git tags.
 
 Transport: `ws://<host>:<port>/ws` — JSON text frames only.

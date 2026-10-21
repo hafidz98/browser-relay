@@ -36,6 +36,8 @@ var qrScanned = false;
 
   function showRequestButton() {
     authBox.style.display = "flex";
+    var lbl = document.getElementById("tokenLabel");
+    if (lbl) lbl.style.display = "none";
     authDesc.innerHTML = "This device isn't paired yet.<br>Request a code from the PC panel.";
     tokenInput.style.display = "none";
     goBtn.style.display = "none";
@@ -45,6 +47,8 @@ var qrScanned = false;
 
   function showPairInput(hint) {
     authBox.style.display = "flex";
+    var lbl = document.getElementById("tokenLabel");
+    if (lbl) lbl.style.display = "block";
     authDesc.textContent = hint;
     tokenInput.style.display = "block";
     tokenInput.value = "";
@@ -104,6 +108,15 @@ var qrScanned = false;
     var edit = document.getElementById("homeEdit");
     if (edit) { edit.classList.remove("on"); edit.textContent = "Edit"; }
   }
+  // The connection state lives in one place: the steps in the home
+  // card, the status pill and the session buttons all follow it.
+  function setConnected(on) {
+    var dis = document.querySelector('[data-act="disconnect"]');
+    if (dis) dis.disabled = !on;
+    var stop = document.querySelector('[data-act="chrome-stop"]');
+    if (stop) stop.disabled = !on;
+  }
+
   // The three dots in the home screen's connection card.
   function updateSteps() {
     var set = function (id, on) {
@@ -117,6 +130,22 @@ var qrScanned = false;
     var open = document.getElementById("openRemote");
     if (open) open.style.display = authed ? "block" : "none";
   }
+
+  // ---- the tools rail can be folded away (desktop) ----
+  (function () {
+    var key = "br_rail";
+    var set = function (collapsed) {
+      document.body.classList.toggle("rail-collapsed", !!collapsed);
+      try { localStorage.setItem(key, collapsed ? "1" : "0"); } catch (e) {}
+    };
+    var saved = null;
+    try { saved = localStorage.getItem(key); } catch (e) {}
+    if (saved === "1") document.body.classList.add("rail-collapsed");
+    var hide = document.getElementById("railToggle");
+    var show = document.getElementById("railOpen");
+    if (hide) hide.onclick = function () { set(true); };
+    if (show) show.onclick = function () { set(false); };
+  })();
 
   // ---- theme ----
   function currentTheme() { return document.documentElement.getAttribute("data-theme") || "dark"; }
@@ -207,6 +236,8 @@ var qrScanned = false;
     ws = new WebSocket(proto + "//" + location.host + "/ws");
     ws.onopen = function () {
       updateSteps();
+      if (tokenInput) tokenInput.disabled = false;
+      if (goBtn) goBtn.disabled = false;
       // QR code (single-use) takes precedence; else fingerprint reconnect.
       // BUT: if the user is mid-pairing (input field visible), don't auto-auth —
       // let them click Hubungkan manually. Auto-auth without token would
@@ -227,6 +258,7 @@ var qrScanned = false;
       switch (m.type) {
         case "welcome":
           authed = true; isDriver = !!m.driver;
+          setConnected(true);
           authBox.style.display = "none";
           authErr.textContent = "";
           goBtn.disabled = false;
@@ -307,8 +339,12 @@ var qrScanned = false;
     };
     ws.onclose = function () {
       authed = false;
+      browserUp = false;
+      setConnected(false);
       openHome();
       if (authDesc) authDesc.textContent = "Connection lost — reconnecting…";
+      if (tokenInput) tokenInput.disabled = true;
+      if (goBtn) goBtn.disabled = true;
       updateSteps();
       latencyMs.textContent = "— ms";
       latencyEl.className = "pending";
