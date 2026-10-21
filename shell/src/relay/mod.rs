@@ -87,6 +87,8 @@ pub struct CoreStatus {
     pub phone_url: String,
     pub phone_urls: Vec<String>,
     pub code: String,
+    /// Seconds left before the pairing code rotates.
+    pub code_expires_in: u64,
     pub version: String,
 }
 
@@ -309,6 +311,10 @@ impl RelayHandle {
                 phone_url: sh.phone_url.clone(),
                 phone_urls: sh.phone_urls.clone(),
                 code,
+                code_expires_in: self
+                    .hub()
+                    .map(|h| h.pairing().code_ttl_remaining())
+                    .unwrap_or(0),
                 version: VERSION.to_string(),
             });
         }

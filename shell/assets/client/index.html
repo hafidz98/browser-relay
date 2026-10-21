@@ -38,6 +38,15 @@
     font-variant-numeric: tabular-nums;
   }
   #latency i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); display: block; }
+  /* no measurement yet: do not claim a healthy link */
+  #latency.pending i { background: var(--faint); }
+  /* which PC this client drives */
+  #peer {
+    position: absolute; top: 10px; left: 10px; z-index: 5; display: none;
+    background: rgba(20,20,20,.72); color: var(--muted);
+    font-size: 11px; padding: 4px 9px; border-radius: 999px;
+    max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   #latency.warn i { background: var(--yellow); }
   #latency.bad i { background: var(--red); }
   #status {
@@ -318,7 +327,8 @@
 <img id="screen" alt="" draggable="false">
 
 <div id="status">connecting…</div>
-<div id="latency"><i></i><span id="latencyMs">— ms</span></div>
+<div id="latency" class="pending"><i></i><span id="latencyMs">— ms</span></div>
+<div id="peer"></div>
 
 <div id="browserDown"><div class="bd-card">
   <div class="bd-title">Chrome isn't running on the laptop</div>

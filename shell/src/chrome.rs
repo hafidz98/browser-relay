@@ -49,6 +49,16 @@ pub fn config_dir() -> PathBuf {
     PathBuf::from("browser-relay")
 }
 
+/// Host name of this PC (shown to clients so the phone can tell
+/// which machine it drives).
+pub fn host_name() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "this PC".to_string())
+}
+
 pub fn ensure_config_dir() {
     let _ = fs::create_dir_all(config_dir());
 }

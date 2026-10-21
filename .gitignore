@@ -1,0 +1,5 @@
+# Build output
+/target/
+/shell/target/
+# Built binaries (do not commit; CI publishes them as release assets)
+/relay-*.exe

@@ -70,22 +70,26 @@ jobs:
         working-directory: shell
 
       - name: Package
+        id: pkg
         shell: pwsh
         run: |
           $version = (Select-String -Path shell/Cargo.toml -Pattern '^version = "([^"]+)"').Matches.Groups[1].Value
           Copy-Item "shell/target/release/browser-relay-shell.exe" "relay-$version.exe"
+          "version=$version" >> $env:GITHUB_OUTPUT
 
+      # Upload the exact file we just built - a glob ("relay-*.exe")
+      # also picks up stale binaries that are committed in the repo.
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: relay-windows
-          path: relay-*.exe
+          path: relay-${{ steps.pkg.outputs.version }}.exe
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: relay-*.exe
+          files: relay-${{ steps.pkg.outputs.version }}.exe
           generate_release_notes: true
 
   android-apk:

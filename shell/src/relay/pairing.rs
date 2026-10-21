@@ -115,6 +115,22 @@ impl PairingManager {
         inner.code.clone()
     }
 
+    /// Seconds left before the current pairing code expires.
+    /// The panel shows it so the code does not silently rotate under
+    /// the user's eyes (it used to change every 5 minutes with no
+    /// indication at all).
+    pub fn code_ttl_remaining(&self) -> u64 {
+        let inner = self.inner.lock().unwrap();
+        if let Some(p) = &inner.pending {
+            let age = now_unix() - p.requested_at;
+            if age <= CODE_TTL_SECS {
+                return CODE_TTL_SECS - age;
+            }
+        }
+        let age = inner.code_born.elapsed().as_secs();
+        CODE_TTL_SECS.saturating_sub(age)
+    }
+
     /// Client-initiated pairing request: generates a single-use code and
     /// stages it for display on the panel. Rate-limited per IP; only one
     /// pending request at a time (a new one replaces the old).

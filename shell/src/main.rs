@@ -1057,6 +1057,17 @@ impl App {
                     });
                 });
             }
+            // Code expiry: the pairing code rotates every 5 minutes -
+            // without this the digits changed silently under the user.
+            if let CoreState::Running(st) = state {
+                let secs = st.code_expires_in;
+                let txt = if secs == 0 {
+                    "expired - a fresh code is generated automatically".to_string()
+                } else {
+                    format!("expires in {}m {:02}s", secs / 60, secs % 60)
+                };
+                ui.label(egui::RichText::new(txt).size(10.5).color(FAINT()));
+            }
             ui.add_space(10.0);
             ui.separator();
             ui.add_space(4.0);
@@ -1595,11 +1606,6 @@ impl App {
         }
     }
 
-    /// Small QR icon button (opens the in-panel QR popup).
-    fn ui_qr_button(&mut self, ui: &mut egui::Ui) {
-        self.ui_qr_button_sized(ui, 34.0);
-    }
-
     fn ui_qr_button_sized(&mut self, ui: &mut egui::Ui, size: f32) {
         let s = size.max(28.0);
         let (rect, resp) =
@@ -1739,94 +1745,6 @@ impl App {
         }
     }
 
-    /// Pairing-request popup: a client tapped "Minta Kode Pairing".
-    /// Shows the single-use code big, plus who is asking. The code is
-    /// the approval — anyone who can read this panel can pair.
-    fn ui_pair_request_overlay(&mut self, ui: &mut egui::Ui, full: egui::Rect) {
-        let req = match &self.relay {
-            Some(r) => r.pair_request(),
-            None => None,
-        };
-        let Some(req) = req else { return };
-        if ui.ctx().input(|i| i.key_pressed(egui::Key::Escape)) {
-            if let Some(r) = &self.relay {
-                r.cancel_pair_request();
-            }
-            return;
-        }
-        let painter = ui.painter().clone();
-        // Scrim.
-        painter.rect_filled(full, 0.0, egui::Color32::from_black_alpha(140));
-        let scrim = ui.allocate_rect(full, egui::Sense::click());
-        // Card.
-        let card_w = 300.0;
-        let card_h = 250.0;
-        let card = egui::Rect::from_center_size(full.center(), egui::vec2(card_w, card_h));
-        painter.rect_filled(card, 14.0, CARD());
-        painter.rect_stroke(
-            card,
-            14.0,
-            egui::Stroke::new(1.0, ACCENT()),
-            egui::StrokeKind::Inside,
-        );
-        let mut y = card.min.y + 18.0;
-        let cx = card.center().x;
-        painter.text(
-            egui::pos2(cx, y),
-            egui::Align2::CENTER_TOP,
-            "Device requests pairing",
-            egui::FontId::proportional(15.0),
-            TEXT(),
-        );
-        y += 28.0;
-        painter.text(
-            egui::pos2(cx, y),
-            egui::Align2::CENTER_TOP,
-            format!("{} ({})", req.name, req.ip),
-            egui::FontId::proportional(12.5),
-            MUTED(),
-        );
-        y += 26.0;
-        // Big code.
-        painter.text(
-            egui::pos2(cx, y),
-            egui::Align2::CENTER_TOP,
-            req.code.clone(),
-            egui::FontId::monospace(42.0),
-            ACCENT(),
-        );
-        y += 58.0;
-        painter.text(
-            egui::pos2(cx, y),
-            egui::Align2::CENTER_TOP,
-            "Type this code on the device.\nSingle-use code — it expires in 5 minutes.",
-            egui::FontId::proportional(11.5),
-            FAINT(),
-        );
-        // Cancel button.
-        let btn = egui::Rect::from_center_size(
-            egui::pos2(cx, card.max.y - 30.0),
-            egui::vec2(120.0, 32.0),
-        );
-        let bresp = ui.allocate_rect(btn, egui::Sense::click());
-        painter.rect_filled(btn, 8.0, RAISED());
-        painter.text(
-            btn.center(),
-            egui::Align2::CENTER_CENTER,
-            "Cancel",
-            egui::FontId::proportional(13.0),
-            TEXT(),
-        );
-        if bresp.clicked() {
-            if let Some(r) = &self.relay {
-                r.cancel_pair_request();
-            }
-        } else if scrim.clicked() {
-            // Clicking outside does NOT dismiss — the code is sensitive.
-            // Only Cancel or Escape.
-        }
-    }
-
     /// Device list popup: paired devices with online status + revoke.
     /// Opened from the "Connected device" row.
     fn ui_devices_popup(&mut self, ui: &mut egui::Ui, full: egui::Rect) {
@@ -1909,6 +1827,9 @@ impl App {
         } else {
             let mut y = list.min.y;
             let mut revoke: Option<String> = None;
+            // Staged confirmation: one mis-click used to kill a paired
+            // device's live session immediately.
+            let mut revoke_stage: Option<String> = None;
             for (fp, dev) in &paired {
                 if y + 44.0 > list.max.y {
                     break;
@@ -1948,16 +1869,21 @@ impl App {
                     egui::vec2(52.0, 24.0),
                 );
                 let bresp = ui.allocate_rect(br, egui::Sense::click());
-                painter.rect_filled(br, 6.0, RAISED());
+                let staged = revoke_stage.as_deref() == Some(fp.as_str());
+                painter.rect_filled(br, 6.0, if staged { ACTIVE() } else { RAISED() });
                 painter.text(
                     br.center(),
                     egui::Align2::CENTER_CENTER,
-                    "Revoke",
+                    if staged { "Sure?" } else { "Revoke" },
                     egui::FontId::proportional(11.0),
-                    RED(),
+                    if staged { RED() } else { MUTED() },
                 );
                 if bresp.clicked() {
-                    revoke = Some(fp.clone());
+                    if staged {
+                        revoke = Some(fp.clone());
+                    } else {
+                        revoke_stage = Some(fp.clone());
+                    }
                 }
                 y += 44.0;
             }

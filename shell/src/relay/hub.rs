@@ -502,6 +502,9 @@ impl Hub {
             self.send_json(id, json!({
                 "type": "welcome", "driver": is_driver, "mobile": mobile,
                 "browserUp": self.browser_up(), "paired": true,
+                // Which PC this is (the client shows it, so the phone
+                // can tell what it is driving).
+                "host": crate::chrome::host_name(),
             }));
             self.send_role(id);
             if let Some(b) = self.browser() {

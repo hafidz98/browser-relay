@@ -4,6 +4,7 @@
   "use strict";
   var img = document.getElementById("screen");
   var status = document.getElementById("status");
+  var peer = document.getElementById("peer");
   var latencyEl = document.getElementById("latency");
   var latencyMs = document.getElementById("latencyMs");
   var authBox = document.getElementById("auth");
@@ -173,7 +174,9 @@
           authErr.textContent = "";
           goBtn.disabled = false;
           goBtn.textContent = "Connect";
-          setStatus(isDriver ? "driving" : "view only");
+          setStatus(isDriver ? "Driving" : "View only");
+          // Which PC are we driving? (the relay sends the host name)
+          if (m.host) { peer.textContent = "Paired to " + m.host; peer.style.display = "block"; }
           if (m.browserUp !== undefined) showBrowserDown(!m.browserUp);
           // Auto-set emulation mode on first connect based on device type.
           // Mobile devices get mobile emulation; desktop gets desktop mode.
@@ -194,7 +197,7 @@
           break;
         case "role":
           isDriver = !!m.driver;
-          setStatus(isDriver ? "driving" : "view only");
+          setStatus(isDriver ? "Driving" : "View only");
           break;
         case "frame":
           img.src = "data:image/jpeg;base64," + m.data;
@@ -241,11 +244,11 @@
     ws.onclose = function () {
       authed = false;
       latencyMs.textContent = "— ms";
-      latencyEl.className = "";
+      latencyEl.className = "pending";
       showBrowserDown(false);
       setStatus("disconnected — retrying…");
       if (!authed && authBox.style.display !== "none") {
-        authDesc.textContent = "Koneksi terputus — mencoba lagi…";
+        authDesc.textContent = "Connection lost - retrying…";
       }
       setTimeout(connect, 2000);
     };

@@ -84,6 +84,10 @@ Clients should send their preference once after `welcome` (mobile clients send
 `mobile: true`; desktop clients send `mobile: false`) so one client's setting
 doesn't leak into another's session.
 
+If no tab is attached yet the server still accepts the message and echoes it
+back — the preference is stored and applied on the next attach, so clients
+don't get an error while Chrome is still starting.
+
 ### `history`
 ```json
 { "type": "history", "action": "back|forward" }
@@ -111,8 +115,11 @@ Reserved for future dynamic screencast bounds. Currently ignored by the server.
 Sent after successful `auth`. `paired: true` means the fingerprint is known.
 
 ```json
-{ "type": "welcome", "driver": true, "mobile": false, "browserUp": true, "paired": true }
+{ "type": "welcome", "driver": true, "mobile": false, "browserUp": true, "paired": true, "host": "DESKTOP-ABC" }
 ```
+
+`host` is the machine name of the PC running the relay, so the client can
+show which computer it is driving.
 
 ### `pair_wait`
 Fingerprint unknown — client must show the pairing-code UI and re-`auth`
@@ -147,7 +154,7 @@ frame (server caps queue per client; slow clients drop frames, never block).
 
 ### `tabs`
 ```json
-{ "type": "tabs", "tabs": [{ "targetId": "…", "title": "…", "url": "…", "current": true }] }
+{ "type": "tabs", "tabs": [{ "id": "…", "title": "…", "url": "…", "active": true }] }
 ```
 
 ### `clipboard`
@@ -187,6 +194,12 @@ device scale factor to get CSS pixels for CDP.
 ## HTTP endpoints (same port)
 
 - `GET /` — web client
-- `GET /pair?c=<code>` — pairing landing (also accepts `host`)
-- `GET /qr` — pairing QR PNG (panel)
-- `GET /api/status` — JSON server status (panel polling)
+- `GET /app.js` — web client script
+- `GET /pair?c=<code>` — pairing landing page. With a **valid, unused** code it
+  shows the code and deep-links into the Android app (`intent://` + a
+  `browserrelay://` fallback). With an **expired, burned or wrong** code it
+  renders an explicit error page instead of the success copy — pairing codes
+  are single-use and expire after 5 minutes, and the panel shows the
+  remaining time.
+- `GET /app.apk` — the Android client, when an APK is staged in the config dir
+- `GET /ws` — the WebSocket endpoint (see above)
