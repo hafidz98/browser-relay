@@ -102,9 +102,13 @@ var qrScanned = false;
 
   // ---- views: the home screen is the entry point, the remote screen is
   // one tap away from there ----
-  function openHome() { document.body.classList.add("home-open"); }
+  function openHome() {
+    document.body.classList.add("home-open");
+    showBrowserDown(!browserUp);
+  }
   function closeHome() {
     document.body.classList.remove("home-open", "home-editing");
+    showBrowserDown(!browserUp);
     var edit = document.getElementById("homeEdit");
     if (edit) { edit.classList.remove("on"); edit.textContent = "Edit"; }
   }
@@ -135,6 +139,18 @@ var qrScanned = false;
     if (open) open.style.display = ready ? "block" : "none";
     var launch = document.getElementById("launchChrome");
     if (launch) launch.style.display = (authed && !browserUp && isDriver) ? "block" : "none";
+    // Say why the shortcuts are dimmed, instead of leaving the user
+    // to guess.
+    var hint = document.getElementById("cardHint");
+    if (hint) {
+      var showHint = authed && !browserUp;
+      hint.style.display = showHint ? "block" : "none";
+      if (showHint) {
+        hint.textContent = isDriver
+          ? "Chrome is not running on the PC. Start it to drive the browser."
+          : "Chrome is not running on the PC. The driver has to start it first.";
+      }
+    }
     setConnected(authed);
     fillPcCard();
   }
@@ -211,7 +227,11 @@ var qrScanned = false;
     updateSteps();
   }
   function showBrowserDown(down) {
-    if (browserDownEl) browserDownEl.style.display = down ? "flex" : "none";
+    if (!browserDownEl) return;
+    // The home screen owns the viewport, so the remote's empty state
+    // must not float over it.
+    var onHome = document.body.classList.contains("home-open");
+    browserDownEl.style.display = (down && !onHome) ? "flex" : "none";
   }
 
   // Remote Chrome launch from the client.
