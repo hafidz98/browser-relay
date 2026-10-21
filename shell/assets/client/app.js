@@ -411,7 +411,9 @@ var qrScanned = false;
             window.__autoMobileDone = true;
             var isMobileDevice = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
               (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 768);
-            send({ type: "emulation", mobile: isMobileDevice, width: 390, height: 844 });
+            // The PC renders the page at this size, so send the real one.
+            var vp = viewBox();
+            send({ type: "emulation", mobile: isMobileDevice, width: Math.round(vp.w), height: Math.round(vp.h) });
           }
           break;
         case "status":
@@ -981,7 +983,12 @@ var qrScanned = false;
     }
     else if (act === "desktop") {
       var on = !desktopBtn.classList.contains("on");
-      send({ type: "emulation", mobile: on, width: 390, height: 844 });
+      var vp2 = viewBox();
+    send({
+      type: "emulation", mobile: on,
+      width: on ? 390 : Math.round(vp2.w),
+      height: on ? 844 : Math.round(vp2.h)
+    });
     }
     else if (act === "zoom") {
       zoomIdx = (zoomIdx + 1) % zoomLevels.length;

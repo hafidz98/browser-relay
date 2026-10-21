@@ -707,7 +707,18 @@ impl Browser {
                 .await?;
             return Ok(());
         }
-        cdp.call("Emulation.clearDeviceMetricsOverride", nop()).await?;
+        // Desktop: render the page at the size of the client view, so
+        // the screencast is shown 1:1. Clearing the override would
+        // fall back to the real window and letterbox the page again -
+        // and it also wiped the viewport the client had asked for.
+        let w = width.clamp(320, 1920);
+        let h = height.clamp(320, 1600);
+        self.state.lock().unwrap().dsf = 1.0;
+        cdp.call(
+            "Emulation.setDeviceMetricsOverride",
+            json!({"width": w, "height": h, "deviceScaleFactor": 1, "mobile": false}),
+        )
+        .await?;
         cdp.call("Emulation.setTouchEmulationEnabled", json!({"enabled": false}))
             .await?;
         let ua = self.state.lock().unwrap().orig_ua.clone();
