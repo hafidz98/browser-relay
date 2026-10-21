@@ -144,9 +144,10 @@
   /* ===== tools sheet ===== */
   #toolsheet {
     position: absolute; left: 50%; right: auto; bottom: 0; z-index: 15;
+    display: flex; flex-direction: column;
     width: min(100%, 620px); transform: translateX(-50%) translateY(calc(100% + 10px));
     background: var(--panel); border: 1px solid var(--border); border-bottom: none;
-    border-radius: 18px 18px 0 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0; padding: 10px 16px 0;
     transition: transform .26s cubic-bezier(.32,.72,.35,1);
     box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
     /* The remote screen has to stay usable behind the sheet: cap it
@@ -156,6 +157,13 @@
 
   }
   body.sheet-tall #toolsheet { max-height: 92vh; }
+  /* The rail scrolls; the exit action stays pinned at the bottom. */
+  .rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .rail-foot {
+    flex: 0 0 auto; padding: 10px 0 calc(12px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border); margin-top: 10px;
+  }
+  .rail-foot .tool { width: 100%; }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
   #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--sheet-line);
     margin: 2px auto 10px; cursor: grab; touch-action: none; }
@@ -213,7 +221,6 @@
   .tool svg { width: 21px; height: 21px; stroke: currentColor; }
   /* session-ending actions live in their own row, not next to Back/Forward */
   .grid.danger { grid-template-columns: 1fr; gap: 8px; margin-top: 6px; }
-  .danger-group { margin-top: 18px; }
   .danger-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
     color: var(--faint); margin: 4px 2px 2px; }
   .tool.danger { flex-direction: row; gap: 10px; justify-content: flex-start; padding-left: 14px;
@@ -459,7 +466,7 @@
   @media (min-width: 900px) {
     #toolsheet {
       position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 300px; height: 100%;
-      max-height: none;
+      max-height: none; padding: 16px 16px 0;
       transform: none !important; border-radius: 0; overflow-y: auto; z-index: 30;
       padding: 16px 16px 24px; border-right: 1px solid var(--border);
     }
@@ -495,12 +502,7 @@
        of the rail, and the rail keeps enough bottom padding that the
        row above can scroll clear of it. */
     #toolsheet { padding-bottom: 120px; }
-    #toolsheet { padding-bottom: 110px; }
-    #toolsheet .danger-group {
-      position: sticky; bottom: 0; background: var(--panel); z-index: 2;
-      padding: 10px 0 4px; margin-top: 16px;
-    }
-    #toolsheet .danger-group .grid.danger { margin-top: 0; }
+    #toolsheet .rail-foot { padding: 10px 0 16px; }
     /* The address row needs its own line in the 300px rail. */
     .addr { flex-wrap: wrap; }
     .addr .url { flex: 1 1 100%; }
@@ -554,6 +556,7 @@
 
 <div id="toolsheet">
   <div class="grip"></div>
+  <div class="rail-body">
   <div class="sheet-head">
     <span class="t">Tools</span>
     <button class="sheet-close" id="sheetClose" aria-label="Close tools">
@@ -603,15 +606,18 @@
       <button class="tool toggle" id="shortcutsBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Shortcuts</button>
     </div>
   </div>
-  <div class="group danger-group">
+    <div class="group">
     <div class="group-label">Session</div>
-    <div class="grid danger">
+    <div class="grid">
       <button class="tool toggle" id="reconnectBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Reconnect</button>
       <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" stroke="none" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
-      <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
     </div>
   </div>
   </div>
+  <div class="rail-foot">
+    <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+  </div>
+
 </div>
 
 <button id="railOpen" title="Show the tools" aria-label="Show the tools"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
