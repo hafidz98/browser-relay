@@ -146,13 +146,18 @@
     border-radius: 18px 18px 0 0; padding: 10px 16px calc(16px + env(safe-area-inset-bottom));
     transition: transform .26s cubic-bezier(.32,.72,.35,1);
     box-shadow: 0 -10px 34px rgba(0,0,0,.5); color: var(--text);
+    /* The remote screen has to stay usable behind the sheet: cap it
+       and scroll the content inside. Dragging the grip up opens the
+       full-height variant. */
+    max-height: 62vh; overflow-y: auto; overscroll-behavior: contain;
   }
+  body.sheet-tall #toolsheet { max-height: 92vh; }
   body.sheet-open #toolsheet { transform: translateX(-50%) translateY(0); }
   #toolsheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--sheet-line);
     margin: 2px auto 10px; cursor: grab; touch-action: none; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 10px; }
   .sheet-head .t { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); }
-  .sheet-close { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border);
+  .sheet-close { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border);
     background: var(--raised); display: flex; align-items: center; justify-content: center; cursor: pointer; }
   .sheet-close svg { width: 15px; height: 15px; stroke: var(--muted); }
   .sheet-close:hover { background: var(--active); }
@@ -384,9 +389,9 @@
     font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
 
   /* ===== tool groups ===== */
-  .group { margin-top: 10px; }
+  .group { margin-top: 18px; }
   .group-label { font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
-    color: var(--muted); margin: 0 0 6px; }
+    color: var(--muted); margin: 0 0 8px; }
   .group .grid { margin-top: 0; }
   .tool.toggle { flex-direction: column; }
   .tool.toggle.on { color: var(--accent); }
@@ -417,6 +422,7 @@
   @media (min-width: 900px) {
     #toolsheet {
       position: fixed; left: 0; right: auto; top: 0; bottom: 0; width: 320px; height: 100%;
+      max-height: none;
       transform: none !important; border-radius: 0; overflow-y: auto; z-index: 30;
       padding: 16px 16px 24px; border-right: 1px solid var(--border);
     }
@@ -424,19 +430,19 @@
     #toolsheet::-webkit-scrollbar { width: 9px; }
     #toolsheet::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9px; }
     #toolsheet::-webkit-scrollbar-track { background: transparent; }
-    #toolsheet .sheet-head .t { color: var(--text); font-size: 13px; font-weight: 650; }
-    /* Tiles share the left edge with the group headers. */
-    .group .grid { justify-items: start; gap: 2px 10px; }
-    .group .tool { min-height: 38px; padding: 6px 2px; }
+    #toolsheet .sheet-head .t { color: var(--text); font-size: 15px; font-weight: 700; letter-spacing: .04em; }
+    /* Two even columns that fill the rail, aligned with the headers. */
+    .group .grid { grid-template-columns: repeat(2, 1fr); gap: 6px 10px; }
+    .group .tool { min-height: 44px; padding: 8px 4px; }
     /* The exit action must never be cut off - it sticks to the bottom
        of the rail, and the rail keeps enough bottom padding that the
        row above can scroll clear of it. */
     #toolsheet { padding-bottom: 120px; }
-    #toolsheet .grid.danger {
+    #toolsheet .danger-group {
       position: sticky; bottom: 0; background: var(--panel); z-index: 2;
-      padding: 8px 0 6px; margin-top: 0;
+      padding: 10px 0 4px; margin-top: 16px;
     }
-    #toolsheet .danger-label { padding-top: 12px; }
+    #toolsheet .danger-group .grid.danger { margin-top: 0; }
     /* The address row needs its own line in a 320px rail. */
     .addr { flex-wrap: wrap; }
     .addr .url { flex: 1 1 100%; }
@@ -484,7 +490,7 @@
   </button>
 </div></div>
 
-<div id="hint">The web view is fullscreen and clean.<br>The small handle on the right edge opens the tools —<br>click: a round button appears, click again: the tools open.<br>Tap the screen = the button hides again.<br>Hold &amp; drag to move its position.</div>
+<div id="hint">Tap the handle on the right edge to open the tools.<br>Drag the grip up for the full list, down to dismiss.<br>Hold &amp; drag the handle to move it.</div>
 
 <div id="backdrop"></div>
 
@@ -527,23 +533,25 @@
   </div>
   <div class="group"><div class="group-label">Input</div>
     <div class="grid">
-      <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Keyboard</button>
-      <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste</button>
-      <button class="tool" data-act="sendclip"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="1.5"/></svg>Send clipboard</button>
+      <button class="tool" data-act="keyboard"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 4h6M12 4v16M9 20h6"/></svg>Keyboard</button>
+      <button class="tool" data-act="paste"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>Paste from PC</button>
+      <button class="tool" data-act="sendclip"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="1.5"/></svg>Send to PC</button>
     </div>
   </div>
   <div class="group"><div class="group-label">View</div>
     <div class="grid">
       <button class="tool toggle" id="themeToggle"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Light theme</button>
       <button class="tool toggle" id="cleanToggle"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>Clean view</button>
-      <button class="tool toggle" id="reconnectBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Reconnect</button>
       <button class="tool toggle" id="shortcutsBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/></svg>Shortcuts</button>
     </div>
   </div>
-  <div class="danger-label">Session</div>
-  <div class="grid danger">
-    <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
-    <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+  <div class="group danger-group">
+    <div class="group-label">Session</div>
+    <div class="grid danger">
+      <button class="tool toggle" id="reconnectBtn"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>Reconnect</button>
+      <button class="tool danger" data-act="chrome-stop"><svg viewBox="0 0 24 24" stroke="none" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Stop Chrome</button>
+      <button class="tool danger primary" data-act="disconnect"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>Disconnect</button>
+    </div>
   </div>
   </div>
 </div>

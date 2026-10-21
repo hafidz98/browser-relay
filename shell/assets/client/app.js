@@ -476,7 +476,7 @@ var qrScanned = false;
   var sheetOpenedAt = 0;
   function toggleSheet(force) {
     var open = typeof force === "boolean" ? force : !body.classList.contains("sheet-open");
-    if (open) sheetOpenedAt = Date.now();
+    if (open) { sheetOpenedAt = Date.now(); body.classList.remove("sheet-tall"); }
     body.classList.toggle("sheet-open", open);
     fab.classList.toggle("open", open);
     clearTimeout(roundTimer);
@@ -641,7 +641,9 @@ var qrScanned = false;
     });
     grip.addEventListener("pointermove", function (e) {
       if (!dragging) return;
-      if (e.clientY - startY > 70) { dragging = false; toggleSheet(false); }
+      var dy = e.clientY - startY;
+      if (dy > 70) { dragging = false; document.body.classList.remove("sheet-tall"); toggleSheet(false); }
+      else if (dy < -70) { dragging = false; document.body.classList.add("sheet-tall"); }
     });
     grip.addEventListener("pointerup", function () { dragging = false; });
     grip.addEventListener("pointercancel", function () { dragging = false; });
