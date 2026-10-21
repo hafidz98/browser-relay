@@ -67,6 +67,8 @@ const FRAME_QUEUE_CAP: usize = 4;
 
 struct HubState {
     clients: HashMap<u64, ClientState>,
+    /// The page is not in the foreground: the screencast is frozen.
+    paused: bool,
     driver: Option<u64>,
     seq: u64,
 }
@@ -88,6 +90,7 @@ impl Hub {
             pairing: PairingManager::new(config_dir, fixed_code),
             state: Mutex::new(HubState {
                 clients: HashMap::new(),
+                paused: false,
                 driver: None,
                 seq: 0,
             }),
@@ -114,6 +117,28 @@ impl Hub {
         self.browser_up
             .swap(up, std::sync::atomic::Ordering::Relaxed)
             != up
+    }
+
+    /// The page is not in the foreground (minimized or covered): the
+    /// screencast is frozen, so the client shows what it has.
+    pub fn set_paused(&self, paused: bool) -> bool {
+        let mut st = self.state.lock().unwrap();
+        if st.paused == paused {
+            return false;
+        }
+        st.paused = paused;
+        true
+    }
+
+    /// Tell every authed client that the screen is frozen.
+    pub fn broadcast_paused(&self) {
+        let msg = json!({"type": "paused", "paused": self.state.lock().unwrap().paused}).to_string();
+        let st = self.state.lock().unwrap();
+        for c in st.clients.values() {
+            if c.authed && c.send.try_send(OutMsg::Text(msg.clone())).is_ok() {
+                c.queued.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     /// Tell every authed client the browser went up or down.
@@ -501,7 +526,8 @@ impl Hub {
             let mobile = self.browser().map(|b| b.is_mobile()).unwrap_or(false);
             self.send_json(id, json!({
                 "type": "welcome", "driver": is_driver, "mobile": mobile,
-                "browserUp": self.browser_up(), "paired": true,
+                "browserUp": self.browser_up(),
+                "paused": self.state.lock().unwrap().paused, "paired": true,
                 // Which PC this is (the client shows it, so the phone
                 // can tell what it is driving).
                 "host": crate::chrome::host_name(),
@@ -580,6 +606,7 @@ impl Hub {
                 let res = match action {
                     "launch" => chrome::launch_chrome(),
                     "close" => chrome::close_chrome(),
+                    "wake" => chrome::wake_chrome(),
                     _ => {
                         self.send_err(id, "bad chrome action");
                         return;
@@ -594,6 +621,13 @@ impl Hub {
                         if action == "close" {
                             self.set_browser_up(false);
                             self.broadcast_status();
+                        }
+                        if action == "wake" {
+                            // The screen was frozen: send a fresh frame
+                            // so the client is not looking at the old one.
+                            if let Some(b) = self.browser() {
+                                b.send_still().await;
+                            }
                         }
                         self.send_json(id, json!({"type": "chrome", "action": action}))
                     }

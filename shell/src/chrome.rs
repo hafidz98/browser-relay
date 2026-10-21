@@ -385,3 +385,69 @@ fn chrome_pid_by_debug_port() -> Option<u32> {
         .lines()
         .find_map(|l| l.trim().parse::<u32>().ok())
 }
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" {
+    fn EnumWindows(
+        cb: extern "system" fn(*mut std::ffi::c_void, isize) -> i32,
+        param: isize,
+    ) -> i32;
+    fn GetWindowThreadProcessId(hwnd: *mut std::ffi::c_void, pid: *mut u32) -> u32;
+    fn ShowWindow(hwnd: *mut std::ffi::c_void, cmd: i32) -> i32;
+    fn SetForegroundWindow(hwnd: *mut std::ffi::c_void) -> i32;
+    fn BringWindowToTop(hwnd: *mut std::ffi::c_void) -> i32;
+}
+
+#[cfg(windows)]
+static WAKE_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+#[cfg(windows)]
+static WAKE_HWND: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(windows)]
+extern "system" fn collect_chrome_window(hwnd: *mut std::ffi::c_void, _l: isize) -> i32 {
+    use std::sync::atomic::Ordering;
+    unsafe {
+        let mut pid: u32 = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        if pid == WAKE_PID.load(Ordering::Relaxed) {
+            WAKE_HWND.store(hwnd as usize, Ordering::Relaxed);
+            return 0; // stop
+        }
+    }
+    1
+}
+
+/// Bring the Chrome window to the front and restore it when it was
+/// minimized.
+///
+/// A minimized or covered window stops painting, so the screencast
+/// freezes and the phone keeps looking at an old screen. Restoring the
+/// window makes it paint again.
+pub fn wake_chrome() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::sync::atomic::Ordering;
+        let pid = chrome_pid_by_debug_port()
+            .or_else(chrome_pid)
+            .ok_or("Chrome is not running")?;
+        WAKE_PID.store(pid, Ordering::Relaxed);
+        WAKE_HWND.store(0, Ordering::Relaxed);
+        unsafe {
+            EnumWindows(collect_chrome_window, 0);
+        }
+        let hwnd = WAKE_HWND.load(Ordering::Relaxed);
+        if hwnd == 0 {
+            return Err("no Chrome window found".into());
+        }
+        const SW_RESTORE: i32 = 9;
+        unsafe {
+            ShowWindow(hwnd as *mut std::ffi::c_void, SW_RESTORE);
+            BringWindowToTop(hwnd as *mut std::ffi::c_void);
+            SetForegroundWindow(hwnd as *mut std::ffi::c_void);
+        }
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    Err("not supported on this platform".into())
+}

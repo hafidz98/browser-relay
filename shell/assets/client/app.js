@@ -187,6 +187,22 @@ var qrScanned = false;
     if (show) show.onclick = function () { set(false); after(); };
   })();
 
+  // ---- the screen is frozen (Chrome minimized or covered) ----
+  function setPaused(on) {
+    var bar = document.getElementById("pausedBar");
+    if (!bar) return;
+    bar.style.display = on ? "flex" : "none";
+    var btn = document.getElementById("wakeChrome");
+    if (btn) btn.style.display = isDriver ? "block" : "none";
+  }
+  var wakeBtn = document.getElementById("wakeChrome");
+  if (wakeBtn) {
+    wakeBtn.onclick = function () {
+      send({ type: "chrome", action: "wake" });
+      toast("Bringing Chrome to the front");
+    };
+  }
+
   // ---- confirm dialog (the browser's confirm() does not belong here) ----
   var confirmDlg = document.getElementById("confirmDlg");
   var confirmTitle = document.getElementById("confirmTitle");
@@ -400,6 +416,7 @@ var qrScanned = false;
             updateStatusText();
           }
           if (m.browserUp !== undefined) { setChromeRunning(m.browserUp); showBrowserDown(!m.browserUp); }
+          if (m.paused !== undefined) setPaused(!!m.paused);
           updateSteps();
           // A QR scan means "show me the screen" - go straight there.
           if (qrScanned) { qrScanned = false; closeHome(); }
@@ -415,6 +432,9 @@ var qrScanned = false;
             var vp = viewBox();
             send({ type: "emulation", mobile: isMobileDevice, width: Math.round(vp.w), height: Math.round(vp.h) });
           }
+          break;
+        case "paused":
+          setPaused(!!m.paused);
           break;
         case "status":
           setChromeRunning(m.browserUp);

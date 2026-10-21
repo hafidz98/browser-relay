@@ -471,6 +471,31 @@ impl Browser {
         }
     }
 
+    /// Is the page in the foreground?
+    ///
+    /// A minimized or covered window stops painting, so the screencast
+    /// freezes and the phone keeps looking at an old screen. The page
+    /// itself knows when it is hidden.
+    pub async fn is_hidden(&self) -> bool {
+        let Some(cdp) = self.state.lock().unwrap().cdp.clone() else {
+            return false;
+        };
+        let Ok(res) = cdp
+            .call(
+                "Runtime.evaluate",
+                json!({"expression": "document.visibilityState", "returnByValue": true}),
+            )
+            .await
+        else {
+            return false;
+        };
+        res.get("result")
+            .and_then(|r| r.get("value"))
+            .and_then(|v| v.as_str())
+            .map(|s| s == "hidden")
+            .unwrap_or(false)
+    }
+
     /// Frame pixels -> CSS pixels of the page.
     ///
     /// The client sends the position inside the image it shows, which
@@ -711,6 +736,14 @@ impl Browser {
                     if let Some(first) = pages.first() {
                         let _ = self.attach(&first.id).await;
                     }
+                }
+            }
+            // Chrome in the background: the screen is frozen, so say so
+            // instead of letting the phone look at a stale frame.
+            if !self.current_target().is_empty() {
+                let hidden = self.is_hidden().await;
+                if self.hub.set_paused(hidden) {
+                    self.hub.broadcast_paused();
                 }
             }
         }
