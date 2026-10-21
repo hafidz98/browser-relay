@@ -20,7 +20,7 @@ use tray_icon::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 use relay::{CoreState, RelayHandle, RelayOpts};
 
-pub const VERSION: &str = "0.9.52";
+pub const VERSION: &str = "0.9.53";
 const ICON_RGBA: &[u8] = include_bytes!("../assets/icon.rgba");
 const ICON_SIZE: u32 = 64;
 /// Loopback port used as a single-instance lock (held for lifetime).

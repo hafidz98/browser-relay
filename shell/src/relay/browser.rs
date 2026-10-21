@@ -488,6 +488,21 @@ impl Browser {
         }
     }
 
+    /// Make the attached tab the active one.
+    ///
+    /// A tab that is not the active one has
+    /// `document.visibilityState == "hidden"`, and a hidden page does
+    /// not paint: the screencast freezes and the client stares at an
+    /// old frame. Activating the tab brings the screen back.
+    pub async fn bring_to_front(&self) -> Result<(), String> {
+        let Some(cdp) = self.state.lock().unwrap().cdp.clone() else {
+            return Err("no tab attached".into());
+        };
+        cdp.call("Page.bringToFront", nop())
+            .await
+            .map(|_| ())
+    }
+
     /// Is the page in the foreground?
     ///
     /// A minimized or covered window stops painting, so the screencast

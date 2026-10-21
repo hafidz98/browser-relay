@@ -642,7 +642,15 @@ impl Hub {
                 let res = match action {
                     "launch" => chrome::launch_chrome(),
                     "close" => chrome::close_chrome(),
-                    "wake" => chrome::wake_chrome(),
+                    "wake" => {
+                        // The window may be minimized (restore it) and the
+                        // tab may not be the active one (activate it).
+                        let _ = chrome::wake_chrome();
+                        if let Some(b) = self.browser() {
+                            let _ = b.bring_to_front().await;
+                        }
+                        Ok(())
+                    }
                     "restart" => chrome::restart_chrome(),
                     _ => {
                         self.send_err(id, "bad chrome action");
@@ -663,6 +671,7 @@ impl Hub {
                             // The screen was frozen: send a fresh frame
                             // so the client is not looking at the old one.
                             if let Some(b) = self.browser() {
+                                b.bring_to_front().await.ok();
                                 b.send_still().await;
                             }
                         }
