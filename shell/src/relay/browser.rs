@@ -884,14 +884,28 @@ impl Browser {
     /// instead keeps the remote view working.
     pub async fn poll_frames(self: Arc<Self>) {
         let mut tick = tokio::time::interval(Duration::from_millis(300));
+        let mut checked_at: u64 = 0;
+        let mut hidden = false;
         loop {
             tick.tick().await;
             if self.current_target().is_empty() {
                 continue;
             }
+            // A page that is visible paints on its own: the screencast
+            // keeps up. Only a hidden page (a minimized window, a tab
+            // in the background) needs the still capture, and mixing
+            // the two makes the picture flicker.
+            let now = now_ms();
+            if now.saturating_sub(checked_at) > 1000 {
+                checked_at = now;
+                hidden = self.is_hidden().await;
+            }
+            if !hidden {
+                continue;
+            }
             let last = self.state.lock().unwrap().last_screencast_ms;
-            if last > 0 && now_ms().saturating_sub(last) < 900 {
-                continue; // the screencast is alive
+            if last > 0 && now.saturating_sub(last) < 900 {
+                continue; // the screencast is alive after all
             }
             self.send_still().await;
         }
@@ -953,13 +967,14 @@ impl Browser {
         dpr: f64,
         zoom: f64,
     ) -> Result<(), String> {
-        let (cdp, mobile) = {
+        let (cdp, mobile, changed) = {
             let mut st = self.state.lock().unwrap();
+            let changed = st.viewport != Some((width, height, dpr, zoom));
             // Remember the request even when no tab is attached yet:
             // otherwise it is lost and the page keeps the size of the
             // window until the client asks again.
             st.viewport = Some((width, height, dpr, zoom));
-            (st.cdp.clone(), st.mobile)
+            (st.cdp.clone(), st.mobile, changed)
         };
         let cdp = cdp.ok_or("no tab attached")?;
         if mobile {
@@ -987,11 +1002,15 @@ impl Browser {
         )
         .await?;
         self.read_page_size(&cdp).await;
-        // The clip follows the page size: restart the capture.
-        let cdp2 = self.state.lock().unwrap().cdp.clone();
-        if let Some(cdp) = cdp2 {
-            let _ = cdp.call("Page.stopScreencast", nop()).await;
-            self.start_screencast(&cdp).await;
+        // The clip follows the page size: restart the capture. Only
+        // when the size really changed: restarting makes the picture
+        // flash for a moment.
+        if changed {
+            let cdp2 = self.state.lock().unwrap().cdp.clone();
+            if let Some(cdp) = cdp2 {
+                let _ = cdp.call("Page.stopScreencast", nop()).await;
+                self.start_screencast(&cdp).await;
+            }
         }
         Ok(())
     }

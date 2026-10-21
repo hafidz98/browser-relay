@@ -637,7 +637,12 @@ var qrScanned = false;
     // frame is a different size, the emulation was reset (a new tab,
     // a navigation): ask for it again.
     var dpr = window.devicePixelRatio || 1;
-    if (Math.abs(nw - b.w * dpr) > 2) {
+    // The PC renders the page at the size we asked for (without our
+    // own zoom) and captures it at 1x, or 2x when we are zoomed in.
+    var zoom = (window.visualViewport && window.visualViewport.scale) || 1;
+    if (zoom < 1) zoom = 1;
+    var want = Math.round(b.w / zoom) * (zoom >= 1.4 ? 2 : 1);
+    if (Math.abs(nw - want) > 2) {
       if (viewportAsks < 6) {
         viewportAsks++;
         setTimeout(function () { sendViewport(true); }, 300);
