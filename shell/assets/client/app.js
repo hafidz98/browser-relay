@@ -143,7 +143,7 @@
   }, 2000);
   function setLatency(ms) {
     latencyMs.textContent = ms + " ms";
-    latencyEl.className = ms < 120 ? "" : ms < 350 ? "warn" : "bad";
+    latencyEl.className = ms < 300 ? "" : ms < 900 ? "warn" : "bad";
   }
 
   function connect() {
@@ -472,8 +472,10 @@
     fab.classList.remove("dragging");
     fab.style.width = ""; fab.style.height = ""; fab.style.borderRadius = "";
     if (!d.moved) {
-      if (fab.classList.contains("round")) toggleSheet(true);
-      else popRound();
+      // One tap opens the tools. The old flow needed two taps (the
+      // handle expanded into a round button first), which read as a
+      // broken control.
+      toggleSheet(true);
       return;
     }
     fab.classList.remove("round");
@@ -492,9 +494,8 @@
     if (Date.now() - sheetOpenedAt < 400) return;
     toggleSheet(false);
   };
-  img.addEventListener("pointerdown", function () {
-    if (fab.classList.contains("round")) collapseRound();
-  });
+  // Tapping the remote page no longer hides the tool handle: that
+  // gesture belongs to the page, not to the client chrome.
 
   // --- tools sheet actions ---
   document.getElementById("urlBar").onclick = function () {
@@ -551,7 +552,9 @@
         if (confirm("Stop Chrome on the laptop?")) send({ type: "chrome", action: "close" });
       }
       else if (act === "disconnect") {
-        // Clear pairing and reload to the pairing screen.
+        // Clear pairing and reload to the pairing screen. This forgets
+        // the device on the PC as well, so confirm first.
+        if (!confirm("Disconnect and forget this device?")) return;
         try { localStorage.removeItem("br_fingerprint"); } catch (e) {}
         if (ws) ws.close();
         location.reload();

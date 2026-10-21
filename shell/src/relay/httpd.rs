@@ -202,8 +202,8 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
                 percent_encode(base)
             );
             let code_h = format!(
-                "<div class=\"code\">{}</div><p class=\"codehint\">or type this code manually in the app</p>",
-                c
+                "<div class=\"coderow\"><div class=\"code\">{}</div><button class=\"copybtn\" onclick=\"navigator.clipboard.writeText('{}').then(function(){{this.textContent='Copied';}}).catch(function(){{}})\">Copy</button></div><p class=\"codehint\">or type this code manually in the app</p>",
+                c, c
             );
             (
                 intent,
@@ -232,7 +232,7 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
     // never fire the intent (also asserted by tests/e2e.py).
     let buttons = if valid && has_code {
         r#"<a class="btn" href="{intent_url}">Open in app</a>
-  <a class="btn ghost" href="{direct_url}">Try another way</a>
+  <a class="btn ghost" href="{direct_url}">Open without the app</a>
   <a class="btn ghost" href="{web_url}">Use the web version</a>"#
             .replace("{intent_url}", &intent_url)
             .replace("{direct_url}", &direct_url)
@@ -262,8 +262,14 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
   .btn {{ display:block; padding:13px 16px; border-radius:8px; background:#8b72f0; color:#fff;
           text-decoration:none; font-weight:600; margin-bottom:10px; }}
   .btn.ghost {{ background:#262626; color:#dadada; border:1px solid #303030; font-weight:500; }}
-  .dot {{ width:44px; height:44px; border-radius:50%; background:#8b72f0; margin:0 auto 16px; }}
-  .dot.err {{ background:#d29922; }}
+  .logo-wrap {{ width:56px; height:56px; border-radius:16px; background:#8b72f0;
+    display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }}
+  .logo {{ width:38px; height:38px; }}
+  .coderow {{ display:flex; gap:8px; align-items:stretch; }}
+  .coderow .code {{ flex:1; }}
+  .copybtn {{ align-self:stretch; padding:0 14px; border-radius:10px; cursor:pointer;
+    background:#262626; color:#dadada; border:1px solid #303030; font:inherit; font-size:13px; }}
+  .copybtn:hover {{ background:#2f2f2f; }}
   .code {{ font-size:34px; font-weight:700; letter-spacing:12px; text-indent:12px; color:#fff;
            background:#141414; border:1px solid #303030; border-radius:10px; padding:12px; margin:0 0 6px; }}
   .codehint {{ font-size:12px !important; margin:0 0 18px !important; }}
@@ -271,7 +277,12 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
 </head>
 <body>
 <div class="card">
-  <div class="dot{dot_cls}"></div>
+  <div class="logo-wrap"><svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+    <rect x="8" y="12" width="32" height="28" rx="9" fill="none" stroke="#fff" stroke-width="4" opacity=".85"/>
+    <rect x="20" y="20" width="32" height="28" rx="9" fill="none" stroke="#fff" stroke-width="4"/>
+    <rect x="37" y="36" width="18" height="18" rx="5" fill="#1e1e1e"/>
+    <path d="M43 40.5l7 5.5-7 5.5z" fill="#fff"/>
+  </svg></div>
   <h1>browser-relay</h1>
   <p{blurb_cls}>{blurb}</p>
   {code_html}
@@ -280,7 +291,6 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
 </div>
 </body>
 </html>"#,
-        dot_cls = if valid && has_code { "" } else { " err" },
         blurb_cls = if valid && has_code { "" } else { " class=\"warn\"" },
     )
 }
