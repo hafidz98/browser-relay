@@ -113,8 +113,6 @@ var qrScanned = false;
   function setConnected(on) {
     var dis = document.querySelector('[data-act="disconnect"]');
     if (dis) dis.disabled = !on;
-    var stop = document.querySelector('[data-act="chrome-stop"]');
-    if (stop) stop.disabled = !on;
   }
 
   // The three dots in the home screen's connection card.
@@ -129,6 +127,7 @@ var qrScanned = false;
     set("stReady", authed);
     var open = document.getElementById("openRemote");
     if (open) open.style.display = authed ? "block" : "none";
+    setConnected(authed);
   }
 
   // ---- the tools rail can be folded away (desktop) ----
