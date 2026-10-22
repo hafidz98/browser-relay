@@ -180,13 +180,10 @@ public class MainActivity extends Activity
     private LinearLayout statusRow;
     private android.widget.EditText pairHostInput;
     private android.widget.EditText pairCodeInput;
-    private android.widget.Button pairRequestBtn;
     private android.widget.Button pairConnectBtn;
     private TextView pairErrorText;
     private TextView statusHostText;
     private TextView gateIndicator;
-    private WsClient pairWs;
-    private boolean pairRequested = false;
     /** The last connection failure, shown next to the Connect button. */
     private String lastConnError = "";
     /** The kind of the last failure (WsClient.Failure.*). */
@@ -286,6 +283,16 @@ public class MainActivity extends Activity
     }
 
     @Override
+    protected void onDestroy() {
+        // The websocket must not outlive the activity: a live socket
+        // keeps the reader thread (and the phone's battery) awake.
+        relay.disconnect();
+        handler.removeCallbacks(idleRunnable);
+        handler.removeCallbacks(roundRunnable);
+        super.onDestroy();
+    }
+
+    @Override
     public void onBackPressed() {
         if (homeView != null && homeView.getVisibility() == View.VISIBLE) {
             closeHome();
@@ -363,15 +370,6 @@ public class MainActivity extends Activity
 
     private String deviceName() {
         return android.os.Build.MODEL != null ? android.os.Build.MODEL : "Android";
-    }
-
-    private String fingerprint() {
-        String fp = prefs.getString("br_fingerprint", null);
-        if (fp == null) {
-            fp = java.util.UUID.randomUUID().toString();
-            prefs.edit().putString("br_fingerprint", fp).apply();
-        }
-        return fp;
     }
 
     // ============================== RelayClient.Listener ==============================
@@ -627,13 +625,6 @@ public class MainActivity extends Activity
     }
 
     @Override
-    public void onPairWait() {
-        runOnUiThread(() -> Toast.makeText(this,
-                "Check the PC panel — type the code shown there",
-                Toast.LENGTH_LONG).show());
-    }
-
-    @Override
     public void onDisconnected() {
         boolean wasAuthed = authed;
         authed = false;
@@ -652,44 +643,12 @@ public class MainActivity extends Activity
         });
     }
 
-    /** User-friendly error text: never leak java.io.* class names. */
-    static String friendlyError(String msg) {
-        if (msg == null) return "connection failed";
-        String m = msg.toLowerCase();
-        // Strip exception class prefixes.
-        msg = msg.replaceAll("^[a-zA-Z0-9_.]+\\.(IOException|Exception|SocketException|UnknownHostException|ConnectException|SocketTimeoutException):\\s*", "");
-        if (m.contains("econnrefused") || m.contains("connection refused")) {
-            return "the server refused the connection — make sure the relay runs on the PC";
-        }
-        if (m.contains("ehostunreach") || m.contains("enetunreach") || m.contains("unreachable")) {
-            return "host unreachable — check WiFi / IP";
-        }
-        if (m.contains("unknownhost") || m.contains("unable to resolve")) {
-            return "unknown host — check the server address";
-        }
-        if (m.contains("timeout") || m.contains("timed out")) {
-            return "connection timeout — the server did not respond";
-        }
-        if (m.contains("broken pipe") || m.contains("connection reset")) {
-            return "the connection was dropped";
-        }
-        // Fallback: trimmed raw message, no package prefixes.
-        msg = msg.replaceAll("[a-z]+\\.[a-z0-9_.]+\\.", "");
-        if (msg.length() > 80) msg = msg.substring(0, 80) + "…";
-        return msg.isEmpty() ? "connection failed" : msg;
-    }
-
-    private long lastConnErrToast = 0;
-    /** True when the current connect attempt was user-initiated. */
-    private boolean manualConnect = false;
-
     @Override
     public void onConnError(String msg, int kind) {
         // The reason is shown next to the Connect button, not in a
         // toast that disappears before it can be read.
         lastConnError = msg == null ? "" : msg.trim();
         lastConnErrorKind = kind;
-        manualConnect = false;
         Log.w(TAG, "conn error: " + lastConnError);
         runOnUiThread(() -> {
             updatePairError();
@@ -711,7 +670,6 @@ public class MainActivity extends Activity
 
     /** Manual reconnect (tap the latency pill when disconnected). */
     private void userReconnect() {
-        manualConnect = true;
         runOnUiThread(() -> {
             latencyText.setText("…");
             lastConnError = "";
@@ -1158,20 +1116,6 @@ public class MainActivity extends Activity
         pairHostInput.setLayoutParams(hlp);
         pairingCard.addView(pairHostInput);
 
-        pairRequestBtn = new android.widget.Button(this);
-        pairRequestBtn.setText("Request Pairing Code");
-        pairRequestBtn.setTextColor(0xFFFFFFFF);
-        pairRequestBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_link, 0, 0, 0);
-        pairRequestBtn.setCompoundDrawablePadding((int) dp(8));
-        android.graphics.drawable.GradientDrawable rbg =
-                new android.graphics.drawable.GradientDrawable();
-        rbg.setColor(0xFF8B72F0);
-        rbg.setCornerRadius(dp(10));
-        pairRequestBtn.setBackground(rbg);
-        pairRequestBtn.setPadding(0, (int) dp(13), 0, (int) dp(13));
-        pairRequestBtn.setOnClickListener(v -> onPairRequest());
-        pairingCard.addView(pairRequestBtn);
-
         TextView cl = new TextView(this);
         cl.setText("Code from the PC panel (6 digits)");
         cl.setTextSize(12);
@@ -1467,72 +1411,6 @@ public class MainActivity extends Activity
         return pairHostInput.getText().toString().trim()
                 .replaceFirst("^https?://", "").replaceAll("/+$", "");
     }
-    /** Request-code flow: ask the PC panel to show a single-use code. */
-    private void onPairRequest() {
-        String host = pairCleanHost();
-        if (host.isEmpty()) {
-            Toast.makeText(this, "Fill in the server address first (host:port)",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        prefs.edit().putString("br_host", host).apply();
-        pairRequestBtn.setEnabled(false);
-        pairRequestBtn.setText("Waiting for the PC panel…");
-        pairRequested = true;
-        if (pairWs != null) pairWs.close();
-        pairWs = new WsClient();
-        final String fp = fingerprint();
-        final String name = deviceName();
-        pairWs.connect("ws://" + host + "/ws", new WsClient.Listener() {
-            @Override public void onOpen() {
-                try {
-                    org.json.JSONObject m = new org.json.JSONObject();
-                    m.put("type", "pair_request");
-                    m.put("fingerprint", fp);
-                    m.put("name", name);
-                    pairWs.send(m.toString());
-                } catch (Exception e) {
-                    onPairError(e.getMessage());
-                }
-            }
-            @Override public void onMessage(String text) {
-                try {
-                    org.json.JSONObject m = new org.json.JSONObject(text);
-                    String t = m.optString("type", "");
-                    if ("pair_wait".equals(t)) {
-                        runOnUiThread(() -> Toast.makeText(MainActivity.this,
-                                "Check the PC panel — type the code shown there",
-                                Toast.LENGTH_LONG).show());
-                    } else if ("error".equals(t)) {
-                        // "already paired", "too many requests", ...
-                        onPairError(m.optString("message", "error"));
-                    }
-                } catch (Exception ignored) {}
-            }
-            @Override public void onError(String msg, int kind) { onPairError(msg); }
-            @Override public void onClose() {}
-        });
-    }
-
-    private void onPairError(String msg) {
-        runOnUiThread(() -> {
-            pairRequested = false;
-            pairRequestBtn.setEnabled(true);
-            pairRequestBtn.setText("Request Pairing Code");
-            String text;
-            if (msg != null && msg.contains("already paired")) {
-                // The server knows this device: the fingerprint is enough.
-                prefs.edit().remove("br_token").apply();
-                text = "This device is already paired — connecting…";
-                connect();
-            } else if (msg != null && msg.contains("too many requests")) {
-                text = "Too many requests — wait a moment and try again.";
-            } else {
-                text = "Failed to request code: " + friendlyError(msg);
-            }
-            Toast.makeText(this, text, Toast.LENGTH_LONG).show();
-        });
-    }
 
     /** Submit the 6-digit code to pair. */
     private void onPairConnect() {
@@ -1553,10 +1431,7 @@ public class MainActivity extends Activity
         }
         prefs.edit().putString("br_host", addr.display())
                 .putString("br_token", code).apply();
-        if (pairWs != null) { pairWs.close(); pairWs = null; }
-        pairRequested = false;
         // Connect via the main relay client; onAuthOk flips the card.
-        manualConnect = true;
         lastConnError = "";
         updatePairError();
         connect();

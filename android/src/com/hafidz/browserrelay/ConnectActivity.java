@@ -12,26 +12,20 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.UUID;
 
-import org.json.JSONObject;
-
 /**
- * Manual server entry + pairing. Two flows:
- * - QR scan (bypasses this screen, handled in MainActivity).
- * - Request-code: enter host, tap "Request Pairing Code", read the
- *   single-use code off the PC panel, enter it, tap "Connect".
+ * Manual server entry + pairing: enter the host, type the 6 digit
+ * code from the PC panel, tap Connect.
+ *
+ * <p>Pairing happens two ways: this screen (type the code) or the
+ * /pair link, which deep links into the app with the code.
  * Fingerprint (br_fingerprint) is the stable device identity.
  */
 public class ConnectActivity extends Activity {
 
     private Button connectBtn;
-    private Button requestBtn;
     private EditText hostInput;
     private EditText tokenInput;
     private SharedPreferences prefs;
-
-    // Pairing-request state: live WS used only to request + submit the code.
-    private WsClient pairWs;
-    private boolean pairRequested = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,15 +36,13 @@ public class ConnectActivity extends Activity {
         hostInput = findViewById(R.id.hostInput);
         tokenInput = findViewById(R.id.tokenInput);
         connectBtn = findViewById(R.id.connectBtn);
-        requestBtn = findViewById(R.id.requestBtn);
 
         String savedHost = prefs.getString("br_host", "");
         hostInput.setText(savedHost);
         // Token field doubles as the pair-code input; don't preload a
         // single-use code (it's burned after one use).
 
-        connectBtn.setOnClickListener(v -> onHubungkan());
-        requestBtn.setOnClickListener(v -> onRequestCode());
+        connectBtn.setOnClickListener(v -> onConnect());
     }
 
     private String fingerprint() {
@@ -66,27 +58,21 @@ public class ConnectActivity extends Activity {
         return android.os.Build.MODEL != null ? android.os.Build.MODEL : "Android";
     }
 
-    private String cleanHost() {
-        return hostInput.getText().toString().trim()
-                .replaceFirst("^https?://", "").replaceAll("/+$", "");
-    }
-
-    private void onHubungkan() {
-        String host = cleanHost();
+    private void onConnect() {
+        ServerAddress addr = ServerAddress.parse(hostInput.getText().toString());
         String code = tokenInput.getText().toString().trim();
-        if (host.isEmpty()) {
-            Toast.makeText(this, "Fill in the server address first (host:port)",
-                    Toast.LENGTH_SHORT).show();
+        if (!addr.isValid()) {
+            Toast.makeText(this, addr.error, Toast.LENGTH_LONG).show();
             return;
         }
         if (!code.matches("\\d{6}")) {
-            Toast.makeText(this, "The code must be 6 digits", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "The code must be 6 digits", Toast.LENGTH_LONG).show();
             return;
         }
         setLoading(true);
         // Test the connection on a background thread before saving.
         new Thread(() -> {
-            boolean ok = probeRelay(host);
+            boolean ok = probeRelay(addr);
             runOnUiThread(() -> {
                 setLoading(false);
                 if (!ok) {
@@ -95,9 +81,8 @@ public class ConnectActivity extends Activity {
                             Toast.LENGTH_LONG).show();
                     return;
                 }
-                prefs.edit().putString("br_host", host)
+                prefs.edit().putString("br_host", addr.display())
                         .putString("br_token", code).apply();
-                closePairWs();
                 // MainActivity is singleTask: this brings it forward and it connects.
                 Intent it = new Intent(this, MainActivity.class);
                 it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -107,97 +92,16 @@ public class ConnectActivity extends Activity {
         }).start();
     }
 
-    private void onRequestCode() {
-        String host = cleanHost();
-        if (host.isEmpty()) {
-            Toast.makeText(this, "Fill in the server address first (host:port)",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        requestBtn.setEnabled(false);
-        requestBtn.setText("Requesting…");
-        closePairWs();
-        pairWs = new WsClient();
-        String wsUrl = "ws://" + host + "/ws";
-        String fp = fingerprint();
-        String name = deviceName();
-        pairWs.connect(wsUrl, new WsClient.Listener() {
-            @Override
-            public void onOpen() {
-                try {
-                    pairWs.send(new JSONObject()
-                            .put("type", "pair_request")
-                            .put("fingerprint", fp)
-                            .put("name", name)
-                            .toString());
-                } catch (Exception e) {
-                    onPairError("could not send the request");
-                }
-            }
-
-            @Override
-            public void onMessage(String text) {
-                try {
-                    JSONObject m = new JSONObject(text);
-                    String t = m.optString("type", "");
-                    if ("pair_wait".equals(t)) {
-                        runOnUiThread(() -> {
-                            pairRequested = true;
-                            requestBtn.setText("Code requested");
-                            Toast.makeText(ConnectActivity.this,
-                                    "Check the PC panel — type the 6-digit code below, then connect",
-                                    Toast.LENGTH_LONG).show();
-                            tokenInput.requestFocus();
-                        });
-                    } else if ("error".equals(t)) {
-                        onPairError(m.optString("message", "error"));
-                    }
-                } catch (Exception ignored) {}
-            }
-
-            @Override
-            public void onClose() {}
-
-            @Override
-            public void onError(String msg, int kind) {
-                onPairError(msg);
-            }
-        });
-    }
-
-    private void onPairError(String msg) {
-        runOnUiThread(() -> {
-            requestBtn.setEnabled(true);
-            requestBtn.setText("Request Pairing Code");
-            Toast.makeText(this, "Failed to request code: " + MainActivity.friendlyError(msg),
-                    Toast.LENGTH_LONG).show();
-        });
-    }
-
-    private void closePairWs() {
-        if (pairWs != null) {
-            pairWs.close();
-            pairWs = null;
-        }
-        pairRequested = false;
-    }
-
-    @Override
-    protected void onDestroy() {
-        closePairWs();
-        super.onDestroy();
-    }
-
     private void setLoading(boolean loading) {
         connectBtn.setEnabled(!loading);
         connectBtn.setText(loading ? "Connecting…" : "Connect");
     }
 
     /** True when something HTTP-ish answers at the relay root. */
-    private boolean probeRelay(String hostPort) {
+    private boolean probeRelay(ServerAddress addr) {
         HttpURLConnection c = null;
         try {
-            URL url = new URL("http://" + hostPort + "/");
+            URL url = new URL("http://" + addr.host + ":" + addr.port + "/");
             c = (HttpURLConnection) url.openConnection();
             c.setConnectTimeout(4000);
             c.setReadTimeout(4000);

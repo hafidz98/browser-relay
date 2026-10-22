@@ -71,15 +71,6 @@
         android:backgroundTint="#8B72F0"
         android:textColor="#FFFFFF" />
 
-    <Button
-        android:id="@+id/requestBtn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:text="Request Pairing Code"
-        android:backgroundTint="#2A2A2A"
-        android:textColor="#DADADA" />
-
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

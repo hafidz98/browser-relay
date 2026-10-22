@@ -84,7 +84,6 @@ public class RelayClient {
          * button instead of retrying forever in the background.
          */
         void onRetriesExhausted();
-        void onPairWait();
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -266,38 +265,6 @@ public class RelayClient {
         });
     }
 
-    /** Ask the relay for a single-use pairing code (shown on the PC panel). */
-    public void requestPairing() {
-        if (ws == null) return;
-        try {
-            ws.send(new JSONObject()
-                    .put("type", "pair_request")
-                    .put("fingerprint", fingerprint)
-                    .put("name", deviceName)
-                    .toString());
-        } catch (Exception e) {
-            Log.w(TAG, "pair_request send: " + e);
-        }
-    }
-
-    /** Pair with a code read off the PC panel. */
-    public void pairWithCode(String code) {
-        if (ws == null || code == null || code.isEmpty()) return;
-        token = code.trim();
-        // Re-auth on the live socket without a full reconnect.
-        try {
-            ws.send(new JSONObject()
-                    .put("type", "auth")
-                    .put("token", token)
-                    .put("fingerprint", fingerprint)
-                    .put("name", deviceName)
-                    .toString());
-            usedToken = token;
-        } catch (Exception e) {
-            Log.w(TAG, "pair auth send: " + e);
-        }
-    }
-
     public void disconnect() {
         wantConnect = false;
         gen++; // ignore every callback of the socket we drop
@@ -330,9 +297,6 @@ public class RelayClient {
         }
         String type = m.optString("type", "");
         switch (type) {
-            case "pair_wait":
-                listener.onPairWait();
-                break;
             case "welcome":
                 authed = true;
                 driver = m.optBoolean("driver", false);
