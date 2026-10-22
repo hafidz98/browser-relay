@@ -10,10 +10,13 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
+import java.net.NoRouteToHostException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 
@@ -32,7 +35,42 @@ public class WsClient {
         void onOpen();
         void onMessage(String text);
         void onClose();
-        void onError(String msg);
+        /**
+         * @param kind one of the {@link Failure} constants, so the UI
+         *              can react (offer the code field, offer a retry).
+         */
+        void onError(String msg, int kind);
+    }
+
+    /** Why a connection failed. The UI maps these to an explanation. */
+    public static final class Failure {
+        public static final int UNKNOWN = 0;
+        /** The host cannot be reached (no route / wrong Wi-Fi). */
+        public static final int UNREACHABLE = 1;
+        /** Nothing is listening on that port. */
+        public static final int REFUSED = 2;
+        /** The host did not answer in time. */
+        public static final int TIMEOUT = 3;
+        /** The peer closed the connection before the handshake. */
+        public static final int CLOSED = 4;
+        /** Something answered, but it is not the relay's websocket. */
+        public static final int NOT_RELAY = 5;
+        /** The relay refused the pairing code. */
+        public static final int BAD_CODE = 6;
+        /** This device is not paired yet. */
+        public static final int NOT_PAIRED = 7;
+        /** The connection was lost after it had been established. */
+        public static final int LOST = 8;
+    }
+
+    /** A failure that already carries its own user-facing sentence. */
+    private static class ConnectFail extends IOException {
+        final int kind;
+
+        ConnectFail(int kind, String msg) {
+            super(msg);
+            this.kind = kind;
+        }
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -74,19 +112,44 @@ public class WsClient {
     }
 
     private void runConnect(String wsUrl, Listener listener) {
+        String host = "";
+        int port = 0;
         try {
             URI uri = new URI(wsUrl);
             if (!"ws".equalsIgnoreCase(uri.getScheme())) {
-                throw new IOException("only ws:// is supported in v1");
+                throw new ConnectFail(Failure.UNKNOWN,
+                        "only ws:// is supported in v1");
             }
-            String host = uri.getHost();
-            int port = uri.getPort() > 0 ? uri.getPort() : 80;
+            // getHost() is null for an authority the URI parser does not
+            // recognise; say so instead of connecting to "null".
+            host = uri.getHost() == null ? "" : uri.getHost();
+            port = uri.getPort() > 0 ? uri.getPort() : 80;
             String path = uri.getRawPath();
             if (path == null || path.isEmpty()) path = "/";
             if (uri.getRawQuery() != null) path += "?" + uri.getRawQuery();
+            if (host.isEmpty()) {
+                throw new ConnectFail(Failure.UNKNOWN,
+                        "\"" + wsUrl + "\" is not a server address - "
+                                + "use host:port, for example 192.168.1.10:8765");
+            }
 
             Socket s = new Socket();
-            s.connect(new InetSocketAddress(host, port), 8000);
+            try {
+                s.connect(new InetSocketAddress(host, port), 8000);
+            } catch (UnknownHostException e) {
+                throw new ConnectFail(Failure.UNREACHABLE,
+                        "cannot find \"" + host + "\" - check the server address");
+            } catch (NoRouteToHostException e) {
+                throw new ConnectFail(Failure.UNREACHABLE,
+                        "no way to reach " + host + " - check the Wi-Fi and the IP");
+            } catch (ConnectException e) {
+                throw new ConnectFail(Failure.REFUSED,
+                        "nothing is listening on " + host + ":" + port
+                                + " - is the relay running on the PC?");
+            } catch (SocketTimeoutException e) {
+                throw new ConnectFail(Failure.TIMEOUT,
+                        host + ":" + port + " did not answer - check the Wi-Fi and the IP");
+            }
             if (readTimeoutMs > 0) {
                 try {
                     s.setSoTimeout(readTimeoutMs);
@@ -117,16 +180,30 @@ public class WsClient {
             out.write(req.getBytes("UTF-8"));
             out.flush();
 
-            String headers = readHttpHeaders(in);
+            String headers;
+            try {
+                headers = readHttpHeaders(in);
+            } catch (EOFException e) {
+                // The peer accepted the TCP connection and then hung up
+                // without a word: a wrong port, a wrong host, or a
+                // firewall that drops the handshake. This used to reach
+                // the user as a bare "EOFException".
+                throw new ConnectFail(Failure.CLOSED,
+                        host + ":" + port + " closed the connection before the "
+                                + "handshake - check the address and the port");
+            }
             if (!headers.startsWith("HTTP/1.1 101") && !headers.startsWith("HTTP/1.0 101")) {
-                throw new IOException("handshake rejected: " + firstLine(headers));
+                throw new ConnectFail(Failure.NOT_RELAY,
+                        host + ":" + port + " answered \"" + firstLine(headers)
+                                + "\" - that is not the relay (it wants /ws)");
             }
             String accept = headerValue(headers, "Sec-WebSocket-Accept");
             MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
             byte[] digest = sha1.digest((key + GUID).getBytes("UTF-8"));
             String expected = Base64.encodeToString(digest, Base64.NO_WRAP);
             if (accept == null || !expected.equals(accept.trim())) {
-                throw new IOException("bad Sec-WebSocket-Accept");
+                throw new ConnectFail(Failure.NOT_RELAY,
+                        host + ":" + port + " is not a browser-relay server");
             }
 
             // From here on the read timeout is the one the client asked
@@ -138,16 +215,27 @@ public class WsClient {
             }
             post(listener::onOpen);
             readLoop(in, listener);
+        } catch (ConnectFail e) {
+            if (!closed) {
+                post(() -> listener.onError(e.getMessage(), e.kind));
+            }
+        } catch (EOFException e) {
+            // The connection dropped while it was running.
+            if (!closed) {
+                post(() -> listener.onError(
+                        "the connection to the PC was closed", Failure.LOST));
+            }
         } catch (Exception e) {
             if (!closed) {
                 final String msg;
                 if (e instanceof SocketTimeoutException) {
                     // The peer stopped answering (dropped Wi-Fi, PC gone).
-                    msg = "read timeout: the PC stopped answering";
+                    msg = "the PC stopped answering";
                 } else {
-                    msg = e.toString();
+                    msg = "cannot connect to " + host + ":" + port
+                            + " (" + e.getMessage() + ")";
                 }
-                post(() -> listener.onError(msg));
+                post(() -> listener.onError(msg, Failure.UNKNOWN));
             }
         } finally {
             notifyClose(listener);

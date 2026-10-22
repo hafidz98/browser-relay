@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#8B72F0</color>
+
+    <!-- The dark theme of the web client (shell/assets/client/index.html :root).
+         The Android client reads the same palette so the two look like
+         one product. -->
+    <color name="relay_bg">#0B0B0B</color>
+    <color name="relay_panel">#1E1E1E</color>
+    <color name="relay_raised">#262626</color>
+    <color name="relay_active">#2F2F2F</color>
+    <color name="relay_border">#303030</color>
+    <color name="relay_text">#DADADA</color>
+    <color name="relay_muted">#A2A2A2</color>
+    <color name="relay_faint">#8A8A8A</color>
+    <color name="relay_accent">#8B72F0</color>
+    <color name="relay_green">#3FB950</color>
+    <color name="relay_yellow">#D29922</color>
+    <color name="relay_red">#F85149</color>
+    <color name="relay_field">#141414</color>
 </resources>

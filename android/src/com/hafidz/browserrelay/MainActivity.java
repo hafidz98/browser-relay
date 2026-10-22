@@ -182,10 +182,15 @@ public class MainActivity extends Activity
     private android.widget.EditText pairCodeInput;
     private android.widget.Button pairRequestBtn;
     private android.widget.Button pairConnectBtn;
+    private TextView pairErrorText;
     private TextView statusHostText;
     private TextView gateIndicator;
     private WsClient pairWs;
     private boolean pairRequested = false;
+    /** The last connection failure, shown next to the Connect button. */
+    private String lastConnError = "";
+    /** The kind of the last failure (WsClient.Failure.*). */
+    private int lastConnErrorKind = WsClient.Failure.UNKNOWN;
     private static final String HOME_PREFS = "br_home";
     private static final String[][] HOME_DEFAULTS = {
             {"Facebook", "facebook.com", "#1877F2"},
@@ -303,12 +308,19 @@ public class MainActivity extends Activity
         Uri data = intent.getData();
         if (data == null || !"browserrelay".equals(data.getScheme())) return false;
         String code = data.getQueryParameter("c");
-        String host = data.getQueryParameter("host"); // e.g. http://192.168.1.5:8080
+        String host = data.getQueryParameter("host"); // e.g. http://192.168.1.5:8765
         if (code == null || !code.matches("\\d{6}")) return false;
-        String hostPort = host == null ? ""
-                : host.replaceFirst("^https?://", "").replaceAll("/+$", "");
-        if (hostPort.isEmpty()) return false;
-        prefs.edit().putString("br_host", hostPort).putString("br_token", code).apply();
+        ServerAddress addr = ServerAddress.parse(host);
+        if (!addr.isValid()) {
+            // The link carried an address we cannot use. Say so instead
+            // of failing later with a bare "EOFException".
+            lastConnError = addr.error;
+            lastConnErrorKind = WsClient.Failure.UNKNOWN;
+            updatePairError();
+            return false;
+        }
+        prefs.edit().putString("br_host", addr.display())
+                .putString("br_token", code).apply();
         Toast.makeText(this, "Paired — connecting…", Toast.LENGTH_SHORT).show();
         return true;
     }
@@ -321,12 +333,22 @@ public class MainActivity extends Activity
             updatePairingCard(); updateGateIndicator();
             return;
         }
+        ServerAddress addr = ServerAddress.parse(hostPort);
+        if (!addr.isValid()) {
+            // A saved address we cannot use: say why, and show the card
+            // so the user can fix it.
+            lastConnError = addr.error;
+            lastConnErrorKind = WsClient.Failure.UNKNOWN;
+            updatePairError();
+            updatePairingCard(); updateGateIndicator();
+            return;
+        }
         // The pairing code is single use: the relay burns it. It is sent
         // with the first auth only, so a spent code is never sent twice.
         String token = prefs.getString("br_token", "");
         String fp = getFingerprint();
-        Log.i(TAG, "connecting to ws://" + hostPort + "/ws");
-        relay.connect("ws://" + hostPort + "/ws", token, fp, deviceName());
+        Log.i(TAG, "connecting to " + addr.wsUrl());
+        relay.connect(addr.wsUrl(), token, fp, deviceName());
     }
 
     /** Stable device fingerprint (the pairing contract identity). */
@@ -590,22 +612,13 @@ public class MainActivity extends Activity
 
     @Override
     public void onAuthError(String msg) {
-        if ("unknown device".equals(msg)) {
-            // Not paired yet — show the pairing card on the home screen.
-            runOnUiThread(() -> {
-                Toast.makeText(this, "Not paired yet — request a code from the PC panel",
-                        Toast.LENGTH_LONG).show();
-                authed = false;
-                updatePairingCard(); updateGateIndicator();
-            });
-            return;
-        }
+        // The reason goes next to the Connect button, where it stays
+        // readable. A toast is gone before the user can act on it.
+        setAuthError(msg);
         if (msg != null && msg.contains("revoked")) {
             // The PC forgot this device: the pairing code is worthless.
             prefs.edit().remove("br_token").apply();
         }
-        Toast.makeText(this, "Failed: " + msg + " — check the pairing code",
-                Toast.LENGTH_LONG).show();
         runOnUiThread(() -> {
             authed = false;
             reconnecting = false;
@@ -671,17 +684,29 @@ public class MainActivity extends Activity
     private boolean manualConnect = false;
 
     @Override
-    public void onConnError(String msg) {
-        // Background auto-reconnect stays silent — no toast spam.
-        // Only a manual reconnect attempt surfaces the error.
-        if (!manualConnect) return;
+    public void onConnError(String msg, int kind) {
+        // The reason is shown next to the Connect button, not in a
+        // toast that disappears before it can be read.
+        lastConnError = msg == null ? "" : msg.trim();
+        lastConnErrorKind = kind;
         manualConnect = false;
-        long now = System.currentTimeMillis();
-        if (now - lastConnErrToast < 8000) return;
-        lastConnErrToast = now;
-        String friendly = friendlyError(msg);
-        runOnUiThread(() -> Toast.makeText(this,
-                "Connection failed: " + friendly, Toast.LENGTH_LONG).show());
+        Log.w(TAG, "conn error: " + lastConnError);
+        runOnUiThread(() -> {
+            updatePairError();
+            updatePairingCard();
+            updateGateIndicator();
+        });
+    }
+
+    @Override
+    public void onRetriesExhausted() {
+        // The automatic reconnect gave up: the UI shows a Reconnect
+        // button. No silent endless retry.
+        runOnUiThread(() -> {
+            reconnecting = false;
+            updateStatusBanner();
+            updatePairingCard();
+        });
     }
 
     /** Manual reconnect (tap the latency pill when disconnected). */
@@ -689,7 +714,8 @@ public class MainActivity extends Activity
         manualConnect = true;
         runOnUiThread(() -> {
             latencyText.setText("…");
-            Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show();
+            lastConnError = "";
+            updatePairError();
         });
         connect();
     }
@@ -1181,6 +1207,19 @@ public class MainActivity extends Activity
         pairConnectBtn.setPadding(0, (int) dp(13), 0, (int) dp(13));
         pairConnectBtn.setOnClickListener(v -> onPairConnect());
         pairingCard.addView(pairConnectBtn);
+
+        // The reason the last attempt failed, right under the button.
+        // It stays until the next attempt, so the user can read it.
+        pairErrorText = new TextView(this);
+        pairErrorText.setTextSize(13);
+        pairErrorText.setTextColor(0xFFF85149);
+        pairErrorText.setVisibility(View.GONE);
+        pairErrorText.setPadding((int) dp(2), (int) dp(8), (int) dp(2), 0);
+        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        pairErrorText.setLayoutParams(elp);
+        pairingCard.addView(pairErrorText);
+
         // QR note (mockup).
         TextView qrNote = new TextView(this);
         qrNote.setText("or scan the QR from the PC panel — it opens automatically");
@@ -1386,11 +1425,48 @@ public class MainActivity extends Activity
         });
     }
 
+    /**
+     * Show the reason the last attempt failed, right under the Connect
+     * button. A disappearing toast is no use for a phone: the user
+     * needs to read WHY it did not connect.
+     */
+    private void updatePairError() {
+        if (pairErrorText == null) return;
+        if (lastConnError == null || lastConnError.isEmpty()) {
+            pairErrorText.setVisibility(View.GONE);
+            pairErrorText.setText("");
+        } else {
+            pairErrorText.setText(lastConnError);
+            pairErrorText.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /**
+     * The relay refused us. Turn its answer into one line the user
+     * can act on: the code was wrong, or this phone is not paired yet.
+     */
+    private void setAuthError(String msg) {
+        String m = msg == null ? "" : msg.toLowerCase();
+        if (m.contains("unknown device")) {
+            lastConnError = "this phone is not paired yet - enter the "
+                    + "6 digit code from the PC panel";
+            lastConnErrorKind = WsClient.Failure.NOT_PAIRED;
+        } else if (m.contains("bad token") || m.contains("invalid token")
+                || m.contains("expired")) {
+            lastConnError = "that code was refused - enter the current "
+                    + "6 digit code from the PC panel";
+            lastConnErrorKind = WsClient.Failure.BAD_CODE;
+        } else {
+            lastConnError = msg == null ? "the relay refused the connection" : msg;
+            lastConnErrorKind = WsClient.Failure.UNKNOWN;
+        }
+        updatePairError();
+    }
+
     private String pairCleanHost() {
         return pairHostInput.getText().toString().trim()
                 .replaceFirst("^https?://", "").replaceAll("/+$", "");
     }
-
     /** Request-code flow: ask the PC panel to show a single-use code. */
     private void onPairRequest() {
         String host = pairCleanHost();
@@ -1433,7 +1509,7 @@ public class MainActivity extends Activity
                     }
                 } catch (Exception ignored) {}
             }
-            @Override public void onError(String msg) { onPairError(msg); }
+            @Override public void onError(String msg, int kind) { onPairError(msg); }
             @Override public void onClose() {}
         });
     }
@@ -1460,24 +1536,30 @@ public class MainActivity extends Activity
 
     /** Submit the 6-digit code to pair. */
     private void onPairConnect() {
-        String host = pairCleanHost();
+        ServerAddress addr = ServerAddress.parse(pairHostInput.getText().toString());
         String code = pairCodeInput.getText().toString().trim();
-        if (host.isEmpty()) {
-            Toast.makeText(this, "Fill in the server address first (host:port)",
-                    Toast.LENGTH_SHORT).show();
+        if (!addr.isValid()) {
+            // The address is wrong: say why, next to the field.
+            lastConnError = addr.error;
+            lastConnErrorKind = WsClient.Failure.UNKNOWN;
+            updatePairError();
             return;
         }
         if (code.length() != 6) {
-            Toast.makeText(this, "The code must be 6 digits", Toast.LENGTH_SHORT).show();
+            lastConnError = "the pairing code is 6 digits - read it from the PC panel";
+            lastConnErrorKind = WsClient.Failure.BAD_CODE;
+            updatePairError();
             return;
         }
-        prefs.edit().putString("br_host", host).putString("br_token", code).apply();
+        prefs.edit().putString("br_host", addr.display())
+                .putString("br_token", code).apply();
         if (pairWs != null) { pairWs.close(); pairWs = null; }
         pairRequested = false;
         // Connect via the main relay client; onAuthOk flips the card.
         manualConnect = true;
+        lastConnError = "";
+        updatePairError();
         connect();
-        Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show();
     }
 
     /** Find the tab ID matching a shortcut URL, or null. */

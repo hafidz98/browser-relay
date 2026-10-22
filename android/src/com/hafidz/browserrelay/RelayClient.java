@@ -38,6 +38,12 @@ public class RelayClient {
     private static final long DEAD_AFTER_MS = 10000;
     /** Read timeout of an authenticated socket (the PC pings back). */
     private static final int READ_TIMEOUT_MS = 20000;
+    /**
+     * How many times the client may reconnect on its own before it
+     * stops and waits for the user. A phone that retries forever
+     * against a wrong address drains the battery and hides the reason.
+     */
+    private static final int MAX_AUTO_RETRIES = 5;
 
     public static class TabInfo {
         public String id;
@@ -67,7 +73,17 @@ public class RelayClient {
         /** The pairing code was refused: drop it, use the fingerprint. */
         void onBadToken();
         void onDisconnected();
-        void onConnError(String msg);
+        /**
+         * The connection failed.
+         *
+         * @param kind one of the {@link WsClient.Failure} constants.
+         */
+        void onConnError(String msg, int kind);
+        /**
+         * The automatic reconnect gave up. The UI shows a Reconnect
+         * button instead of retrying forever in the background.
+         */
+        void onRetriesExhausted();
         void onPairWait();
     }
 
@@ -87,6 +103,8 @@ public class RelayClient {
     private boolean driver;
     private boolean wantConnect;
     private int backoffMs = 2000;
+    /** How many automatic reconnects happened since the last success. */
+    private int autoRetries = 0;
     /** When the last message from the PC arrived (watchdog). */
     private long lastRxAt = 0;
     /** The view size in CSS pixels, used by viewport/emulation. */
@@ -113,7 +131,8 @@ public class RelayClient {
             // gone: drop the socket and let the reconnect take over.
             if (lastRxAt > 0 && now - lastRxAt > DEAD_AFTER_MS) {
                 Log.w(TAG, "no answer from the PC, reconnecting");
-                listener.onConnError("timeout");
+                listener.onConnError("the PC stopped answering",
+                        WsClient.Failure.LOST);
                 WsClient dead = ws;
                 ws = null;
                 if (dead != null) dead.close();
@@ -158,6 +177,7 @@ public class RelayClient {
         this.deviceName = name;
         wantConnect = true;
         backoffMs = 2000;
+        autoRetries = 0;
         doConnect();
     }
 
@@ -166,6 +186,7 @@ public class RelayClient {
         if (wsUrl.isEmpty()) return;
         wantConnect = true;
         backoffMs = 2000;
+        autoRetries = 0;
         main.removeCallbacks(reconnectTask);
         doConnect();
     }
@@ -223,17 +244,24 @@ public class RelayClient {
                 main.removeCallbacks(pingTask);
                 if (ws == client) ws = null;
                 listener.onDisconnected();
-                if (wantConnect) {
+                // Reconnect on our own a few times, then stop and let the
+                // user press Reconnect. An endless silent retry hides
+                // the reason and burns the battery.
+                if (wantConnect && autoRetries < MAX_AUTO_RETRIES) {
+                    autoRetries++;
                     main.postDelayed(reconnectTask, backoffMs);
                     backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
+                } else {
+                    wantConnect = false;
+                    listener.onRetriesExhausted();
                 }
             }
 
             @Override
-            public void onError(String msg) {
+            public void onError(String msg, int kind) {
                 if (g != gen) return; // a newer socket took over
                 Log.w(TAG, "ws: " + msg);
-                listener.onConnError(msg);
+                listener.onConnError(msg, kind);
             }
         });
     }
@@ -308,6 +336,9 @@ public class RelayClient {
             case "welcome":
                 authed = true;
                 driver = m.optBoolean("driver", false);
+                // A working connection resets the retry budget.
+                autoRetries = 0;
+                backoffMs = 2000;
                 main.removeCallbacks(pingTask);
                 main.postDelayed(pingTask, PING_MS);
                 // An authenticated socket must not stay silent forever:

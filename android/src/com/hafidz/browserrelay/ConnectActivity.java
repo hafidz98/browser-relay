@@ -159,7 +159,7 @@ public class ConnectActivity extends Activity {
             public void onClose() {}
 
             @Override
-            public void onError(String msg) {
+            public void onError(String msg, int kind) {
                 onPairError(msg);
             }
         });
