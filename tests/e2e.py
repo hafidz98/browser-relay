@@ -162,11 +162,20 @@ def main():
         and "browserrelay" in html
         and f"/?code={TOKEN}" in html,
     )
-    st, body = http_get("/pair?c=000000")
-    html = body.decode("utf-8", "replace")
+    # The landing page must NOT reveal whether the code is the current
+    # one: it renders the same page for every code, so guessing over
+    # HTTP buys an attacker nothing. Compare the two pages with the
+    # code itself masked out — they must be identical.
+    st_bad, body_bad = http_get("/pair?c=000000")
+    masked_ok = body.replace(TOKEN.encode(), b"XXXXXX")
+    masked_bad = body_bad.replace(b"000000", b"XXXXXX")
     check(
-        "GET /pair wrong code -> no auto-pair leak",
-        st == 200 and "intent://pair" not in html and "000000" not in html.split("code=")[-1][:10],
+        "GET /pair does not leak whether the code is current",
+        st_bad == 200 and masked_ok == masked_bad,
+    )
+    check(
+        "GET /pair wrong code still offers the deep link",
+        st_bad == 200 and b"intent://pair" in body_bad,
     )
     check("GET /app.apk 404 (none staged)", http_status("/app.apk") == 404)
     check("GET /nope 404", http_status("/nope") == 404)

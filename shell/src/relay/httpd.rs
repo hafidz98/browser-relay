@@ -111,14 +111,18 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
             }
         }
         "/pair" => {
+            // The landing page says NOTHING about whether the code is
+            // the current one: it renders the same page for every
+            // code, so a script cannot tell a live code from a dead
+            // one with a single request. The phone app (or the web
+            // client) reports whether the code worked.
             let code = query_param(&query, "c");
-            let valid = code.as_deref() == Some(hub.pair_code().as_str());
             let base = stream
                 .local_addr()
                 .map(|a| format!("http://{}", a))
                 .unwrap_or_default();
             let apk_available = chrome::config_dir().join("browser-relay.apk").exists();
-            let html = pair_page(code.as_deref(), valid, &base, apk_available);
+            let html = pair_page(code.as_deref(), &base, apk_available);
             respond(&mut stream, "200 OK", "text/html; charset=utf-8", html.as_bytes()).await;
         }
         "/app.apk" => {
@@ -230,70 +234,49 @@ fn percent_encode(s: &str) -> String {
     out
 }
 
-/// The QR landing page. With a valid code it auto-jumps to the
-/// Android app via an intent:// URL whose browser fallback is the
-/// pre-paired web client; without the app (or without a valid code)
-/// the user lands on the web client.
+/// The QR landing page. It renders the SAME page for every code — the
+/// code goes into the deep link, and the phone app is the thing that
+/// tells the user whether it still works.
 ///
-/// A present-but-invalid code (expired/burned — codes rotate every
-/// 5 minutes) gets an explicit ERROR state: the old page reused the
-/// success copy minus the code block, so a dead scan read exactly
-/// like a working one.
-fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -> String {
-    let has_code = code.is_some();
-    let (intent_url, direct_url, web_url, code_html, blurb) = match code {
-        Some(c) if valid => {
-            let web = format!("{base}/?code={c}");
-            // `host` carries the phone-visible base URL so the native
-            // app can connect with zero manual entry after a QR scan.
-            let intent = format!(
-                "intent://pair?c={c}&host={}#Intent;scheme=browserrelay;package=com.hafidz.browserrelay;S.browser_fallback_url={};end",
-                percent_encode(base),
-                percent_encode(&web)
-            );
-            let direct = format!(
-                "browserrelay://pair?c={c}&host={}",
-                percent_encode(base)
-            );
-            let code_h = format!(
-                "<div class=\"coderow\"><div class=\"code\">{}</div><button class=\"copybtn\" onclick=\"navigator.clipboard.writeText('{}').then(function(){{this.textContent='Copied';}}).catch(function(){{}})\">Copy</button></div><p class=\"codehint\">or type this code manually in the app</p>",
-                c, c
-            );
-            (
-                intent,
-                direct,
-                web,
-                code_h,
-                "Pairing scanned. Tap the button to open the app — if it doesn't open, type the code manually.",
-            )
-        }
-        Some(_) => (
-            String::new(),
-            String::new(),
-            format!("{base}/"),
-            String::new(),
-            "This code is no longer valid — it expired or was already used. Open the browser-relay panel on the laptop for a fresh code, then scan its QR again.",
-        ),
-        None => (
-            String::new(),
-            String::new(),
-            format!("{base}/"),
-            String::new(),
-            "No pairing code in this link. Open the browser-relay panel on the laptop and scan its pairing QR.",
-        ),
+/// The page used to render a different layout for a wrong code, which
+/// turned it into a free oracle: one request per guess, and the
+/// answer in the HTML. Now the response is byte-identical whatever
+/// the code is, so guessing over HTTP buys the attacker nothing.
+///
+/// `code` is the code from the URL query — attacker-controlled, so it
+/// is sanitised to six digits (or a six-character placeholder) before
+/// it reaches the HTML: a stray `<` or `&` must not become markup, and
+/// the rendered page must stay the same length whatever was asked for.
+fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
+    // Six digits, or a fixed-width placeholder: the rendered page must
+    // have the same length for every input, so a malformed code cannot
+    // be told apart from a wrong one by its size.
+    let c = match code {
+        Some(c) if c.len() == 6 && c.bytes().all(|b| b.is_ascii_digit()) => c,
+        _ => "------",
     };
-    // Only the valid state may offer the deep link: a dead code must
-    // never fire the intent (also asserted by tests/e2e.py).
-    let buttons = if valid && has_code {
-        r#"<a class="btn" href="{intent_url}">Open in app</a>
+    let web = format!("{base}/?code={c}");
+    // `host` carries the phone-visible base URL so the native app can
+    // connect with zero manual entry after a QR scan.
+    let intent_url = format!(
+        "intent://pair?c={c}&host={}#Intent;scheme=browserrelay;package=com.hafidz.browserrelay;S.browser_fallback_url={};end",
+        percent_encode(base),
+        percent_encode(&web)
+    );
+    let direct_url = format!(
+        "browserrelay://pair?c={c}&host={}",
+        percent_encode(base)
+    );
+    let code_html = format!(
+        "<div class=\"coderow\"><div class=\"code\">{c}</div><button class=\"copybtn\" onclick=\"navigator.clipboard.writeText('{c}').then(function(){{this.textContent='Copied';}}).catch(function(){{}})\">Copy</button></div><p class=\"codehint\">or type this code manually in the app</p>"
+    );
+    let blurb = "Pairing scanned. Tap the button to open the app — if it doesn't open, type the code manually.";
+    let buttons = r#"<a class="btn" href="{intent_url}">Open in app</a>
   <a class="btn ghost" href="{direct_url}">Open without the app</a>
   <a class="btn ghost" href="{web_url}">Use the web version</a>"#
-            .replace("{intent_url}", &intent_url)
-            .replace("{direct_url}", &direct_url)
-            .replace("{web_url}", &web_url)
-    } else {
-        format!(r#"<a class="btn ghost" href="{web_url}">Use the web version</a>"#)
-    };
+        .replace("{intent_url}", &intent_url)
+        .replace("{direct_url}", &direct_url)
+        .replace("{web_url}", &web_url);
     let apk_btn = if apk_available {
         r#"<a class="btn ghost" href="/app.apk">Download the Android app</a>"#
     } else {
@@ -312,7 +295,6 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
   .card {{ width:min(92vw,380px); background:#1e1e1e; border:1px solid #303030; border-radius:12px; padding:26px 22px; text-align:center; }}
   h1 {{ font-size:18px; margin:0 0 6px; }}
   p {{ color:#9a9a9a; margin:0 0 20px; font-size:13.5px; }}
-  p.warn {{ color:#d29922; }}
   .btn {{ display:block; padding:13px 16px; border-radius:8px; background:#8b72f0; color:#fff;
           text-decoration:none; font-weight:600; margin-bottom:10px; }}
   .btn.ghost {{ background:#262626; color:#dadada; border:1px solid #303030; font-weight:500; }}
@@ -338,14 +320,13 @@ fn pair_page(code: Option<&str>, valid: bool, base: &str, apk_available: bool) -
     <path d="M43 40.5l7 5.5-7 5.5z" fill="#fff"/>
   </svg></div>
   <h1>browser-relay</h1>
-  <p{blurb_cls}>{blurb}</p>
+  <p>{blurb}</p>
   {code_html}
   {buttons}
   {apk_btn}
 </div>
 </body>
-</html>"##,
-        blurb_cls = if valid && has_code { "" } else { " class=\"warn\"" },
+</html>"##
     )
 }
 
