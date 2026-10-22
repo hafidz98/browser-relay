@@ -18,4 +18,8 @@
     <color name="relay_yellow">#D29922</color>
     <color name="relay_red">#F85149</color>
     <color name="relay_field">#141414</color>
+
+    <!-- The scrims over the remote view. -->
+    <color name="relay_scrim">#40000000</color>
+    <color name="relay_scrim_strong">#D8000000</color>
 </resources>

@@ -80,12 +80,27 @@ public class MainActivity extends Activity
     private LinearLayout tabRow;
     private GridLayout toolGrid;
     private TextView latencyText;
-    private View latencyDot;
     private TextView urlText;
     private ImageButton reloadBtn;
     private EditText kbd;
     private View takeoverBtn;
     private TextView statusBanner;
+
+    // ---- the three states (exactly one at a time) ----
+    /** Not connected: the address + code + Connect card. */
+    private View connectCard;
+    private EditText serverInput;
+    private EditText codeInput;
+    private View connectBtn;
+    private TextView connectError;
+    /** Connected: the slim bar with the state and the round-trip time. */
+    private View statusBar;
+    private TextView statusText;
+    private View statusDot;
+    /** Connection lost: the banner with the Reconnect button. */
+    private View lostBanner;
+    private TextView lostText;
+    private View reconnectBtn;
 
     private RelayClient relay;
     private SharedPreferences prefs;
@@ -108,7 +123,12 @@ public class MainActivity extends Activity
     private final Runnable roundRunnable = this::collapseRound;
 
     // ---- connection state ----
-    private boolean authed;
+    /** The relay said hello: we have a session. */
+    private boolean connected;
+    /** "Driving Chrome" or "View only" - the status bar shows it. */
+    private String roleLabel = "";
+    /** The session ended on its own: the Reconnect banner. */
+    private boolean lost;
     private boolean browserUp = true;
     private boolean mobile;
     private boolean firstWelcome = true;
@@ -118,8 +138,6 @@ public class MainActivity extends Activity
     private boolean flagsOk = true;
     /** The last thing the relay complained about (shown in the banner). */
     private String serverNote = "";
-    /** True while the relay is reconnecting on its own. */
-    private boolean reconnecting = false;
 
     // ---- frame decode (latest-only, off the main thread) ----
     private final ExecutorService frameWorker = Executors.newSingleThreadExecutor();
@@ -175,15 +193,6 @@ public class MainActivity extends Activity
     }
 
     // ---- home (beranda) ----
-    // ---- pairing card (integrated into beranda) ----
-    private LinearLayout pairingCard;
-    private LinearLayout statusRow;
-    private android.widget.EditText pairHostInput;
-    private android.widget.EditText pairCodeInput;
-    private android.widget.Button pairConnectBtn;
-    private TextView pairErrorText;
-    private TextView statusHostText;
-    private TextView gateIndicator;
     /** The last connection failure, shown next to the Connect button. */
     private String lastConnError = "";
     /** The kind of the last failure (WsClient.Failure.*). */
@@ -218,17 +227,24 @@ public class MainActivity extends Activity
         tabRow = findViewById(R.id.tabRow);
         toolGrid = findViewById(R.id.toolGrid);
         latencyText = findViewById(R.id.latencyText);
-        latencyDot = findViewById(R.id.latencyDot);
-        // Tap the latency pill to manually reconnect when disconnected.
-        android.view.View latencyPill = findViewById(R.id.latencyPill);
-        latencyPill.setOnClickListener(v -> {
-            if (!authed) userReconnect();
-        });
         urlText = findViewById(R.id.urlText);
         reloadBtn = findViewById(R.id.reloadBtn);
         kbd = findViewById(R.id.kbd);
         takeoverBtn = findViewById(R.id.takeoverBtn);
         statusBanner = findViewById(R.id.statusBanner);
+
+        // The three states.
+        connectCard = findViewById(R.id.connectCard);
+        serverInput = findViewById(R.id.serverInput);
+        codeInput = findViewById(R.id.codeInput);
+        connectBtn = findViewById(R.id.connectBtn);
+        connectError = findViewById(R.id.connectError);
+        statusBar = findViewById(R.id.statusBar);
+        statusText = findViewById(R.id.statusText);
+        statusDot = findViewById(R.id.statusDot);
+        lostBanner = findViewById(R.id.lostBanner);
+        lostText = findViewById(R.id.lostText);
+        reconnectBtn = findViewById(R.id.reconnectBtn);
 
         frameView.setInputSink(this);
         relay = new RelayClient(this);
@@ -237,6 +253,13 @@ public class MainActivity extends Activity
             relay.sendTakeover();
             Toast.makeText(this, "Taking over the remote view",
                     Toast.LENGTH_SHORT).show();
+        });
+        // One Connect button, one Reconnect button.
+        connectBtn.setOnClickListener(v -> onConnectPressed());
+        reconnectBtn.setOnClickListener(v -> {
+            lastConnError = "";
+            updateConnectError();
+            userReconnect();
         });
         // The PC renders the page for the size we show: tell it when
         // that size changes.
@@ -252,6 +275,9 @@ public class MainActivity extends Activity
 
         handlePairIntent(getIntent());
         updateBrowserDown();
+        // Start in one state only: the connect card, until the relay
+        // says hello.
+        showConnectState();
     }
 
     @Override
@@ -275,9 +301,10 @@ public class MainActivity extends Activity
     @Override
     protected void onPause() {
         super.onPause();
+        // Going to the background is not a lost connection: the app
+        // reconnects when it comes back, and the user must not be shown
+        // the "connection lost" banner for it.
         relay.disconnect();
-        authed = false;
-        reconnecting = false;
         handler.removeCallbacks(idleRunnable);
         handler.removeCallbacks(roundRunnable);
     }
@@ -323,21 +350,22 @@ public class MainActivity extends Activity
             // of failing later with a bare "EOFException".
             lastConnError = addr.error;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
-            updatePairError();
+            updateConnectError();
             return false;
         }
         prefs.edit().putString("br_host", addr.display())
                 .putString("br_token", code).apply();
-        Toast.makeText(this, "Paired — connecting…", Toast.LENGTH_SHORT).show();
+        // Fill the card, so the user can see what the link carried.
+        if (serverInput != null) serverInput.setText(addr.display());
+        if (codeInput != null) codeInput.setText(code);
         return true;
     }
 
     private void connect() {
         String hostPort = prefs.getString("br_host", null);
         if (hostPort == null) {
-            // No saved host: stay on beranda, the pairing card is visible.
-            // (ConnectActivity is legacy — pairing lives in MainActivity now.)
-            updatePairingCard(); updateGateIndicator();
+            // No saved host: show the connect card and wait for the user.
+            showConnectState();
             return;
         }
         ServerAddress addr = ServerAddress.parse(hostPort);
@@ -346,8 +374,8 @@ public class MainActivity extends Activity
             // so the user can fix it.
             lastConnError = addr.error;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
-            updatePairError();
-            updatePairingCard(); updateGateIndicator();
+            updateConnectError();
+            showConnectState();
             return;
         }
         // The pairing code is single use: the relay burns it. It is sent
@@ -376,8 +404,8 @@ public class MainActivity extends Activity
 
     @Override
     public void onWelcome(boolean driver, boolean browserUp, boolean mobile) {
-        authed = true;
-        reconnecting = false;
+        connected = true;
+        lost = false;
         this.browserUp = browserUp;
         this.mobile = mobile;
         // The pairing code is burned by the relay: forget it, so the next
@@ -385,14 +413,13 @@ public class MainActivity extends Activity
         prefs.edit().remove("br_token").apply();
         serverNote = "";
         lastServerNote = "";
+        roleLabel = driver ? "Driving Chrome" : "View only";
         updateBrowserDown();
-        updatePairingCard(); updateGateIndicator();
+        updateState();
         updateDesktopTool();
         updateTakeover();
         updateStatusBanner();
         Log.i(TAG, "welcome driver=" + driver + " browserUp=" + browserUp);
-        Toast.makeText(this, driver ? "You are driving" : "View only",
-                Toast.LENGTH_SHORT).show();
         // The PC renders the page for whoever drives: tell it our size.
         updateViewSize();
         if (firstWelcome) {
@@ -416,14 +443,14 @@ public class MainActivity extends Activity
     public void onPaused(boolean paused) {
         this.paused = paused;
         updateStatusBanner();
-        updatePairingCard();
+        updateState();
     }
 
     @Override
     public void onFlagsOk(boolean flagsOk) {
         this.flagsOk = flagsOk;
         updateStatusBanner();
-        updatePairingCard();
+        updateState();
     }
 
     private long lastServerNoteAt = 0;
@@ -451,8 +478,7 @@ public class MainActivity extends Activity
         // The pairing code was spent or wrong. The relay retries with
         // the fingerprint alone (this device may already be paired).
         prefs.edit().remove("br_token").apply();
-        reconnecting = true;
-        updatePairingCard(); updateGateIndicator();
+        updateState();
         Toast.makeText(this, "That pairing code was already used — "
                 + "reconnecting with this device", Toast.LENGTH_LONG).show();
     }
@@ -488,7 +514,7 @@ public class MainActivity extends Activity
     /** The take-over button only makes sense while we are watching. */
     private void updateTakeover() {
         if (takeoverBtn == null) return;
-        boolean show = authed && !relay.isDriver();
+        boolean show = connected && !relay.isDriver();
         takeoverBtn.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
@@ -530,14 +556,14 @@ public class MainActivity extends Activity
     public void onLatency(long ms) {
         latencyText.setText(ms + " ms");
         int color = ms < 120 ? 0xFF3FB950 : ms < 350 ? 0xFFD29922 : 0xFFF85149;
-        latencyDot.setBackgroundTintList(ColorStateList.valueOf(color));
+        statusDot.setBackgroundTintList(ColorStateList.valueOf(color));
     }
 
     @Override
     public void onRole(boolean driver) {
+        roleLabel = driver ? "Driving Chrome" : "View only";
         updateTakeover();
-        Toast.makeText(this, driver ? "You are driving" : "View only",
-                Toast.LENGTH_SHORT).show();
+        updateState();
     }
 
     @Override
@@ -618,28 +644,33 @@ public class MainActivity extends Activity
             prefs.edit().remove("br_token").apply();
         }
         runOnUiThread(() -> {
-            authed = false;
-            reconnecting = false;
-            updatePairingCard(); updateGateIndicator();
+            connected = false;
+            lost = false;
+            // A new code is needed: the field is cleared so the user
+            // types the one the panel shows now.
+            if (lastConnErrorKind == WsClient.Failure.NOT_PAIRED
+                    && codeInput != null) {
+                codeInput.setText("");
+            }
+            updateState();
         });
     }
 
     @Override
     public void onDisconnected() {
-        boolean wasAuthed = authed;
-        authed = false;
-        // The relay owns the reconnection (one loop, with backoff).
-        // We only show what is happening.
-        reconnecting = wasAuthed;
+        boolean hadSession = connected;
+        connected = false;
+        // A session that existed and is gone is "lost": the user gets
+        // the banner with a Reconnect button. A connection that never
+        // came up is "not connected": the user gets the card with the
+        // reason on it.
+        lost = hadSession;
         runOnUiThread(() -> {
             latencyText.setText("— ms");
-            latencyDot.setBackgroundTintList(ColorStateList.valueOf(0xFF6B6B6B));
+            statusDot.setBackgroundTintList(ColorStateList.valueOf(0xFF8A8A8A));
             updateBrowserDown();
             updateTakeover();
-            if (wasAuthed && statusHostText != null) {
-                statusHostText.setText("Reconnecting…");
-            }
-            updatePairingCard(); updateGateIndicator();
+            updateState();
         });
     }
 
@@ -651,35 +682,35 @@ public class MainActivity extends Activity
         lastConnErrorKind = kind;
         Log.w(TAG, "conn error: " + lastConnError);
         runOnUiThread(() -> {
-            updatePairError();
-            updatePairingCard();
-            updateGateIndicator();
+            updateConnectError();
+            updateState();
         });
     }
 
     @Override
     public void onRetriesExhausted() {
-        // The automatic reconnect gave up: the UI shows a Reconnect
-        // button. No silent endless retry.
+        // The automatic reconnect gave up: the banner with the
+        // Reconnect button is the way out. No silent endless retry.
         runOnUiThread(() -> {
-            reconnecting = false;
             updateStatusBanner();
-            updatePairingCard();
+            updateState();
         });
     }
 
-    /** Manual reconnect (tap the latency pill when disconnected). */
+    /** Manual reconnect (the Reconnect button in the banner). */
     private void userReconnect() {
+        lost = false;
         runOnUiThread(() -> {
             latencyText.setText("…");
             lastConnError = "";
-            updatePairError();
+            updateConnectError();
+            updateState();
         });
         connect();
     }
 
     private void updateBrowserDown() {
-        browserDown.setVisibility(authed && !browserUp ? View.VISIBLE : View.GONE);
+        browserDown.setVisibility(connected && !browserUp ? View.VISIBLE : View.GONE);
     }
 
     // ============================== FrameView.InputSink ==============================
@@ -842,6 +873,16 @@ public class MainActivity extends Activity
         findViewById(R.id.launchChromeBtn).setOnClickListener(v -> {
             relay.sendChrome("launch");
             Toast.makeText(this, "Chrome launching…", Toast.LENGTH_SHORT).show();
+        });
+        // End the session: the app goes back to the connect card.
+        findViewById(R.id.disconnectBtn).setOnClickListener(v -> {
+            relay.disconnect();
+            connected = false;
+            lost = false;
+            lastConnError = "";
+            updateConnectError();
+            closeSheet();
+            updateState();
         });
         // Shortcut grid in the sheet (mirrors beranda, for quick access
         // from the viewport without going back home).
@@ -1057,184 +1098,9 @@ public class MainActivity extends Activity
         header.addView(titles);
         col.addView(header);
 
-        // ---- pairing card (visible when unpaired) ----
-        pairingCard = new LinearLayout(this);
-        pairingCard.setOrientation(LinearLayout.VERTICAL);
-        android.graphics.drawable.GradientDrawable pbg =
-                new android.graphics.drawable.GradientDrawable();
-        pbg.setColor(0xFF1E1E1E);
-        pbg.setCornerRadius(dp(14));
-        pbg.setStroke((int) dp(1), 0xFF8B72F0);
-        pairingCard.setBackground(pbg);
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        plp.setMargins(hp, (int) dp(4), hp, (int) dp(4));
-        pairingCard.setLayoutParams(plp);
-        pairingCard.setPadding(hp, (int) dp(16), hp, (int) dp(16));
-
-        TextView pt = new TextView(this);
-        pt.setText("Connect to PC");
-        pt.setTextSize(15);
-        pt.setTextColor(0xFFDADADA);
-        pt.setTypeface(null, android.graphics.Typeface.BOLD);
-        pairingCard.addView(pt);
-        // 3-gate stepper: Server -> Chrome -> Siap.
-        gateIndicator = new TextView(this);
-        gateIndicator.setTextSize(11);
-        gateIndicator.setTextColor(0xFF9A9A9A);
-        gateIndicator.setPadding(0, (int) dp(4), 0, (int) dp(8));
-        pairingCard.addView(gateIndicator);
-        updateGateIndicator();
-        TextView ps = new TextView(this);
-        ps.setText("Choose how to pair:");
-        ps.setTextSize(12);
-        ps.setTextColor(0xFF9A9A9A);
-        ps.setPadding(0, (int) dp(2), 0, (int) dp(12));
-        pairingCard.addView(ps);
-
-        TextView hl = new TextView(this);
-        hl.setText("Server (host:port)");
-        hl.setTextSize(12);
-        hl.setTextColor(0xFF9A9A9A);
-        pairingCard.addView(hl);
-        pairHostInput = new android.widget.EditText(this);
-        pairHostInput.setHint("192.168.1.10:8765");
-        pairHostInput.setTextSize(14);
-        pairHostInput.setTextColor(0xFFDADADA);
-        pairHostInput.setHintTextColor(0xFF6B6B6B);
-        pairHostInput.setBackground(null);
-        android.graphics.drawable.GradientDrawable hbg =
-                new android.graphics.drawable.GradientDrawable();
-        hbg.setColor(0xFF141414);
-        hbg.setCornerRadius(dp(8));
-        hbg.setStroke((int) dp(1), 0xFF333333);
-        pairHostInput.setBackground(hbg);
-        pairHostInput.setPadding((int) dp(12), (int) dp(11), (int) dp(12), (int) dp(11));
-        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hlp.setMargins(0, (int) dp(4), 0, (int) dp(12));
-        pairHostInput.setLayoutParams(hlp);
-        pairingCard.addView(pairHostInput);
-
-        TextView cl = new TextView(this);
-        cl.setText("Code from the PC panel (6 digits)");
-        cl.setTextSize(12);
-        cl.setTextColor(0xFF9A9A9A);
-        cl.setPadding(0, (int) dp(4), 0, 0);
-        pairingCard.addView(cl);
-        pairCodeInput = new android.widget.EditText(this);
-        pairCodeInput.setHint("••••••");
-        pairCodeInput.setTextSize(20);
-        pairCodeInput.setTextColor(0xFFDADADA);
-        pairCodeInput.setHintTextColor(0xFF6B6B6B);
-        pairCodeInput.setGravity(Gravity.CENTER);
-        pairCodeInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
-        pairCodeInput.setBackground(hbg);
-        pairCodeInput.setPadding((int) dp(12), (int) dp(11), (int) dp(12), (int) dp(11));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        clp.setMargins(0, (int) dp(4), 0, (int) dp(12));
-        pairCodeInput.setLayoutParams(clp);
-        pairingCard.addView(pairCodeInput);
-
-        pairConnectBtn = new android.widget.Button(this);
-        pairConnectBtn.setText("Connect");
-        pairConnectBtn.setTextColor(0xFFDADADA);
-        pairConnectBtn.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_link, 0, 0, 0);
-        pairConnectBtn.setCompoundDrawablePadding((int) dp(8));
-        android.graphics.drawable.GradientDrawable cbg =
-                new android.graphics.drawable.GradientDrawable();
-        cbg.setColor(0xFF262626);
-        cbg.setCornerRadius(dp(10));
-        cbg.setStroke((int) dp(1), 0xFF333333);
-        pairConnectBtn.setBackground(cbg);
-        pairConnectBtn.setPadding(0, (int) dp(13), 0, (int) dp(13));
-        pairConnectBtn.setOnClickListener(v -> onPairConnect());
-        pairingCard.addView(pairConnectBtn);
-
-        // The reason the last attempt failed, right under the button.
-        // It stays until the next attempt, so the user can read it.
-        pairErrorText = new TextView(this);
-        pairErrorText.setTextSize(13);
-        pairErrorText.setTextColor(0xFFF85149);
-        pairErrorText.setVisibility(View.GONE);
-        pairErrorText.setPadding((int) dp(2), (int) dp(8), (int) dp(2), 0);
-        LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        pairErrorText.setLayoutParams(elp);
-        pairingCard.addView(pairErrorText);
-
-        // QR note (mockup).
-        TextView qrNote = new TextView(this);
-        qrNote.setText("or scan the QR from the PC panel — it opens automatically");
-        qrNote.setTextSize(11);
-        qrNote.setTextColor(0xFF6B6B6B);
-        qrNote.setGravity(Gravity.CENTER);
-        qrNote.setPadding(0, (int) dp(10), 0, 0);
-        pairingCard.addView(qrNote);
-        col.addView(pairingCard);
-
-        // ---- status row (visible when paired) ----
-        statusRow = new LinearLayout(this);
-        statusRow.setOrientation(LinearLayout.HORIZONTAL);
-        statusRow.setGravity(Gravity.CENTER_VERTICAL);
-        android.graphics.drawable.GradientDrawable sbg2 =
-                new android.graphics.drawable.GradientDrawable();
-        sbg2.setColor(0xFF1E1E1E);
-        sbg2.setCornerRadius(dp(12));
-        sbg2.setStroke((int) dp(1), 0xFF333333);
-        statusRow.setBackground(sbg2);
-        LinearLayout.LayoutParams slp2 = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        slp2.setMargins(hp, (int) dp(4), hp, (int) dp(4));
-        statusRow.setLayoutParams(slp2);
-        statusRow.setPadding(hp, (int) dp(12), hp, (int) dp(12));
-        View dot = new View(this);
-        android.graphics.drawable.GradientDrawable dbg =
-                new android.graphics.drawable.GradientDrawable();
-        dbg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        dbg.setColor(0xFF4CAF50);
-        dot.setBackground(dbg);
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams((int) dp(10), (int) dp(10));
-        dlp.setMargins(0, 0, (int) dp(10), 0);
-        dot.setLayoutParams(dlp);
-        statusRow.addView(dot);
-        LinearLayout st = new LinearLayout(this);
-        st.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams stlp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        st.setLayoutParams(stlp);
-        TextView st1 = new TextView(this);
-        st1.setText("Connected to the PC");
-        st1.setTextSize(13);
-        st1.setTextColor(0xFFDADADA);
-        TextView st2 = new TextView(this);
-        st2.setTextSize(11);
-        st2.setTextColor(0xFF9A9A9A);
-        st2.setTag("status_host");
-        st.addView(st1);
-        st.addView(st2);
-        statusRow.addView(st);
-        statusHostText = st2;
-        android.widget.Button disBtn = new android.widget.Button(this);
-        disBtn.setText("Disconnect");
-        disBtn.setTextSize(12);
-        disBtn.setTextColor(0xFFFF8A8A);
-        android.graphics.drawable.GradientDrawable dbgb =
-                new android.graphics.drawable.GradientDrawable();
-        dbgb.setColor(0xFF262626);
-        dbgb.setCornerRadius(dp(8));
-        dbgb.setStroke((int) dp(1), 0xFF4A2A2A);
-        disBtn.setBackground(dbgb);
-        disBtn.setOnClickListener(v -> {
-            relay.disconnect();
-            authed = false;
-            reconnecting = false;
-            updateTakeover();
-            updatePairingCard(); updateGateIndicator();
-        });
-        statusRow.addView(disBtn);
-        col.addView(statusRow);
+        // The pairing card and the status row live in the layout
+        // (connectCard / statusBar): the beranda is only the
+        // shortcuts, so exactly one state is on screen at a time.
 
         // search box (mockup: 10px radius, not pill).
         TextView search = new TextView(this);
@@ -1325,63 +1191,88 @@ public class MainActivity extends Activity
         }
     }
 
-    /** Update the 3-gate stepper: Server -> Chrome -> Siap. */
-    private void updateGateIndicator() {
-        if (gateIndicator == null) return;
+    /**
+     * The one state on screen: not connected, connected, or the
+     * connection was lost. Exactly one of the three is visible, and
+     * the status information lives in one place - the status bar.
+     */
+    private void updateState() {
         runOnUiThread(() -> {
-            String s;
-            if (authed && browserUp) {
-                s = "✓ Server  →  ✓ Chrome  →  ✓ Ready";
-            } else if (authed) {
-                s = "✓ Server  →  ◌ Chrome  →  ○ Ready";
-            } else if (reconnecting) {
-                // Reconnecting after an unexpected disconnect.
-                s = "◌ Server  →  ◌ Chrome  →  ○ Ready  (reconnecting…)";
-            } else {
-                s = "○ Server  →  ○ Chrome  →  ○ Ready";
-            }
-            gateIndicator.setText(s);
-        });
-    }
+            boolean wasConnectCard = connectCard != null
+                    && connectCard.getVisibility() == View.VISIBLE;
+            // Exactly one state at a time.
+            boolean showConnect = !connected && !lost;
+            boolean showBanner = lost;
+            boolean showRemote = connected || lost;
 
-    /** Toggle pairing card vs status row based on auth state. */
-    private void updatePairingCard() {
-        runOnUiThread(() -> {
-            if (pairingCard == null) return;
-            // During auto-reconnect, keep the status row (not the pairing card).
-            boolean showStatus = authed || reconnecting;
-            pairingCard.setVisibility(showStatus ? View.GONE : View.VISIBLE);
-            statusRow.setVisibility(showStatus ? View.VISIBLE : View.GONE);
-            if (authed) {
-                String host = prefs.getString("br_host", "");
-                if (statusHostText != null) statusHostText.setText(host + statusNote());
-            } else if (reconnecting) {
-                if (statusHostText != null) statusHostText.setText("Reconnecting…");
-            } else {
-                // Pre-fill saved host.
-                String saved = prefs.getString("br_host", "");
-                if (pairHostInput != null && pairHostInput.getText().length() == 0) {
-                    pairHostInput.setText(saved);
+            if (connectCard != null) {
+                connectCard.setVisibility(showConnect ? View.VISIBLE : View.GONE);
+            }
+            if (statusBar != null) {
+                statusBar.setVisibility(showRemote ? View.VISIBLE : View.GONE);
+            }
+            if (lostBanner != null) {
+                lostBanner.setVisibility(showBanner ? View.VISIBLE : View.GONE);
+            }
+            // The remote view only shows once there is a session.
+            if (frameView != null) {
+                frameView.setVisibility(showRemote ? View.VISIBLE : View.INVISIBLE);
+            }
+            // The tools belong to a live session.
+            if (handle != null) {
+                handle.setVisibility(showRemote ? View.VISIBLE : View.GONE);
+            }
+
+            if (statusText != null) {
+                if (connected) {
+                    String host = prefs.getString("br_host", "");
+                    String t = roleLabel.isEmpty() ? "Connected" : roleLabel;
+                    if (!host.isEmpty()) t += " · " + host;
+                    statusText.setText(t + statusNote());
+                } else if (lost) {
+                    statusText.setText("Not connected");
                 }
             }
-            // Dim shortcuts when unpaired.
-            if (homeGrid != null) homeGrid.setAlpha(authed ? 1f : 0.35f);
+            if (statusDot != null) {
+                int color = connected ? 0xFF3FB950 : 0xFF8A8A8A;
+                statusDot.setBackgroundTintList(ColorStateList.valueOf(color));
+            }
+            if (lostText != null) {
+                lostText.setText(lastConnError.isEmpty()
+                        ? "The connection to the PC was lost."
+                        : lastConnError);
+            }
+            // The connect card is pre-filled with the address that
+            // worked last.
+            if (showConnect && serverInput != null
+                    && serverInput.getText().length() == 0) {
+                serverInput.setText(prefs.getString("br_host", ""));
+            }
+            // Dim shortcuts when there is no session to drive.
+            if (homeGrid != null) homeGrid.setAlpha(connected ? 1f : 0.35f);
+            if (wasConnectCard && showConnect) {
+                // The card just came back: the keyboard may be in the way.
+                serverInput.requestFocus();
+            }
         });
     }
 
-    /**
-     * Show the reason the last attempt failed, right under the Connect
-     * button. A disappearing toast is no use for a phone: the user
-     * needs to read WHY it did not connect.
-     */
-    private void updatePairError() {
-        if (pairErrorText == null) return;
+    /** The not-connected state. */
+    private void showConnectState() {
+        connected = false;
+        lost = false;
+        updateState();
+    }
+
+    /** The line under the Connect button: what is wrong, or what to do. */
+    private void updateConnectError() {
+        if (connectError == null) return;
         if (lastConnError == null || lastConnError.isEmpty()) {
-            pairErrorText.setVisibility(View.GONE);
-            pairErrorText.setText("");
+            connectError.setVisibility(View.GONE);
+            connectError.setText("");
         } else {
-            pairErrorText.setText(lastConnError);
-            pairErrorText.setVisibility(View.VISIBLE);
+            connectError.setText(lastConnError);
+            connectError.setVisibility(View.VISIBLE);
         }
     }
 
@@ -1404,36 +1295,30 @@ public class MainActivity extends Activity
             lastConnError = msg == null ? "the relay refused the connection" : msg;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
         }
-        updatePairError();
+        updateConnectError();
     }
 
-    private String pairCleanHost() {
-        return pairHostInput.getText().toString().trim()
-                .replaceFirst("^https?://", "").replaceAll("/+$", "");
-    }
-
-    /** Submit the 6-digit code to pair. */
-    private void onPairConnect() {
-        ServerAddress addr = ServerAddress.parse(pairHostInput.getText().toString());
-        String code = pairCodeInput.getText().toString().trim();
+    /** The Connect button on the card. */
+    private void onConnectPressed() {
+        ServerAddress addr = ServerAddress.parse(serverInput.getText().toString());
+        String code = codeInput.getText().toString().trim();
         if (!addr.isValid()) {
             // The address is wrong: say why, next to the field.
             lastConnError = addr.error;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
-            updatePairError();
+            updateConnectError();
             return;
         }
-        if (code.length() != 6) {
+        if (!code.matches("\\d{6}")) {
             lastConnError = "the pairing code is 6 digits - read it from the PC panel";
             lastConnErrorKind = WsClient.Failure.BAD_CODE;
-            updatePairError();
+            updateConnectError();
             return;
         }
         prefs.edit().putString("br_host", addr.display())
                 .putString("br_token", code).apply();
-        // Connect via the main relay client; onAuthOk flips the card.
         lastConnError = "";
-        updatePairError();
+        updateConnectError();
         connect();
     }
 
@@ -1674,7 +1559,7 @@ public class MainActivity extends Activity
     private void openHome() {
         homeEditing = false;
         renderHome();
-        updatePairingCard(); updateGateIndicator();
+        updateState();
         homeView.setVisibility(View.VISIBLE);
         homeView.bringToFront();
     }

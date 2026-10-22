@@ -1,144 +1,339 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    The remote screen is the main surface and fills the window.
+    Everything else is one of three states, and only one is on screen:
+      - not connected : the connect card (address, code, Connect, reason)
+      - connected     : the remote view + a slim status bar
+      - lost          : the remote view + the status bar + a Reconnect banner
+    The web client does the same: on a phone #screen sits under the
+    slim #status bar.
+-->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000">
+    android:background="@color/relay_bg">
 
-    <!-- fullscreen remote viewport -->
-    <com.hafidz.browserrelay.FrameView
-        android:id="@+id/frame"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <!-- "Chrome isn't running" overlay, driven by welcome/status -->
+    <!-- the status bar and the remote screen -->
     <LinearLayout
-        android:id="@+id/browserDown"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="32dp"
-        android:background="#D8000000"
+        android:orientation="vertical">
+
+        <!-- ===================== CONNECTED: the status bar =====================
+             One place for the state, the round-trip time, and Take over. -->
+        <LinearLayout
+            android:id="@+id/statusBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:background="@color/relay_bg"
+            android:visibility="gone">
+
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@drawable/dot" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:text="Connected"
+                android:textColor="@color/relay_text"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/latencyText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="— ms"
+                android:textColor="@color/relay_faint"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/takeoverBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="Take over"
+                android:textAllCaps="false"
+                android:textSize="12sp"
+                android:textColor="@color/relay_accent"
+                android:background="@drawable/accent_pill_bg"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- ===================== THE REMOTE SCREEN ===================== -->
+        <FrameLayout
+            android:id="@+id/screenArea"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <!-- fullscreen remote viewport -->
+            <com.hafidz.browserrelay.FrameView
+                android:id="@+id/frame"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- "Chrome isn't running" overlay, driven by welcome/status -->
+            <LinearLayout
+                android:id="@+id/browserDown"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:padding="32dp"
+                android:background="@color/relay_scrim_strong"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Chrome isn't running on the laptop"
+                    android:textColor="@color/relay_text"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:gravity="center" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Start it from here — the screen appears as soon as Chrome connects."
+                    android:textColor="@color/relay_muted"
+                    android:textSize="13sp"
+                    android:gravity="center" />
+
+                <Button
+                    android:id="@+id/launchChromeBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="44dp"
+                    android:layout_marginTop="16dp"
+                    android:text="Launch Chrome"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="@color/relay_accent" />
+            </LinearLayout>
+
+            <!-- The banners live in one column, so they stack instead of
+                 landing on top of each other. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:orientation="vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="10dp">
+
+                <!-- CONNECTION LOST: one banner with a Reconnect button. -->
+                <LinearLayout
+                    android:id="@+id/lostBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:background="@drawable/banner_bg"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/lostText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="The connection to the PC was lost."
+                        android:textColor="@color/relay_text"
+                        android:textSize="13sp" />
+
+                    <Button
+                        android:id="@+id/reconnectBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:layout_marginStart="8dp"
+                        android:paddingStart="14dp"
+                        android:paddingEnd="14dp"
+                        android:text="Reconnect"
+                        android:textAllCaps="false"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"
+                        android:backgroundTint="@color/relay_accent" />
+                </LinearLayout>
+
+                <!-- the relay's own notes: the page is frozen, Chrome runs
+                     without the flags, another device is driving -->
+                <TextView
+                    android:id="@+id/statusBanner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:padding="9dp"
+                    android:background="@drawable/banner_bg"
+                    android:textColor="@color/relay_text"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <!-- first-run hint bubble -->
+            <TextView
+                android:id="@+id/hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|start"
+                android:layout_marginStart="12dp"
+                android:layout_marginBottom="20dp"
+                android:maxWidth="250dp"
+                android:padding="9dp"
+                android:background="@drawable/hint_bg"
+                android:text="The web view is fullscreen and clean.\nThe small handle on the right edge opens the tools — tap: a round button appears, tap again: the tools open.\nTap the screen = the button hides again.\nHold &amp; drag to move its position."
+                android:textColor="@color/relay_text"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp"
+                android:visibility="gone" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- ===================== NOT CONNECTED: the connect card =====================
+         The one card the user sees before there is a connection: the PC
+         address, the pairing code, one Connect button, and the line under
+         it that says what is wrong. -->
+    <ScrollView
+        android:id="@+id/connectCard"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/relay_bg"
+        android:fillViewport="true"
         android:visibility="gone">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Chrome isn't running on the laptop"
-            android:textColor="#DADADA"
-            android:textSize="17sp"
-            android:textStyle="bold"
-            android:gravity="center" />
+            android:orientation="vertical"
+            android:padding="24dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Start it from here — the screen appears as soon as Chrome connects."
-            android:textColor="#9A9A9A"
-            android:textSize="13sp"
-            android:gravity="center" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:text="Connect to your PC"
+                android:textColor="@color/relay_text"
+                android:textSize="22sp"
+                android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/launchChromeBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="Launch Chrome"
-            android:textColor="#FFFFFF"
-            android:backgroundTint="#8B72F0" />
-    </LinearLayout>
+            <TextView
+                android:id="@+id/connectHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Open the panel on the laptop for the address and the 6 digit code."
+                android:textColor="@color/relay_muted"
+                android:textSize="14sp" />
 
-    <!-- latency pill, top-right -->
-    <LinearLayout
-        android:id="@+id/latencyPill"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="10dp"
-        android:layout_marginEnd="10dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="9dp"
-        android:paddingEnd="9dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:background="@drawable/pill_bg">
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="PC ADDRESS"
+                android:textColor="@color/relay_faint"
+                android:textSize="11sp"
+                android:letterSpacing="0.1" />
 
-        <View
-            android:id="@+id/latencyDot"
-            android:layout_width="6dp"
-            android:layout_height="6dp"
-            android:background="@drawable/dot" />
+            <EditText
+                android:id="@+id/serverInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:hint="192.168.1.10:8765"
+                android:textColor="@color/relay_text"
+                android:textColorHint="@color/relay_faint"
+                android:background="@drawable/field_bg"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:inputType="textUri"
+                android:imeOptions="actionNext"
+                android:singleLine="true" />
 
-        <TextView
-            android:id="@+id/latencyText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="5dp"
-            android:text="— ms"
-            android:textColor="#E8E8E8"
-            android:textSize="11sp" />
-    </LinearLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="PAIRING CODE"
+                android:textColor="@color/relay_faint"
+                android:textSize="11sp"
+                android:letterSpacing="0.1" />
 
-    <!-- take over the wheel (view-only clients) -->
-    <Button
-        android:id="@+id/takeoverBtn"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="12dp"
-        android:layout_marginTop="10dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
-        android:text="Take over"
-        android:textAllCaps="false"
-        android:textColor="#EBFFFFFF"
-        android:textSize="12sp"
-        android:background="@drawable/pill_bg"
-        android:visibility="gone" />
+            <EditText
+                android:id="@+id/codeInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:hint="6 digits"
+                android:textColor="@color/relay_text"
+                android:textColorHint="@color/relay_faint"
+                android:background="@drawable/field_bg"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:inputType="number"
+                android:maxLength="6"
+                android:letterSpacing="0.3"
+                android:imeOptions="actionDone"
+                android:singleLine="true" />
 
-    <!-- relay status: paused / flags / errors -->
-    <TextView
-        android:id="@+id/statusBanner"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:layout_marginTop="46dp"
-        android:padding="9dp"
-        android:background="@drawable/hint_bg"
-        android:textColor="#EBFFFFFF"
-        android:textSize="12sp"
-        android:visibility="gone" />
+            <Button
+                android:id="@+id/connectBtn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="20dp"
+                android:text="Connect"
+                android:textAllCaps="false"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="@color/relay_accent" />
 
-    <!-- first-run hint bubble -->
-    <TextView
-        android:id="@+id/hint"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_marginStart="12dp"
-        android:layout_marginBottom="20dp"
-        android:maxWidth="250dp"
-        android:padding="9dp"
-        android:background="@drawable/hint_bg"
-        android:text="The web view is fullscreen and clean.\nThe small handle on the right edge opens the tools — tap: a round button appears, tap again: the tools open.\nTap the screen = the button hides again.\nHold &amp; drag to move its position."
-        android:textColor="#EBFFFFFF"
-        android:textSize="12sp"
-        android:lineSpacingExtra="2dp"
-        android:visibility="gone" />
+            <!-- The line under the button: what is wrong, or what to do.
+                 It stays until the next attempt, so it can be read. -->
+            <TextView
+                android:id="@+id/connectError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minHeight="20dp"
+                android:textColor="@color/relay_red"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </ScrollView>
 
     <!-- sheet backdrop -->
     <View
         android:id="@+id/backdrop"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#40000000"
+        android:background="@color/relay_scrim"
         android:visibility="gone" />
 
     <!-- tools bottom sheet -->
@@ -193,7 +388,7 @@
                     android:layout_weight="1"
                     android:layout_marginStart="7dp"
                     android:text="—"
-                    android:textColor="#DADADA"
+                    android:textColor="@color/relay_text"
                     android:textSize="13sp"
                     android:singleLine="true"
                     android:ellipsize="end" />
@@ -201,8 +396,8 @@
 
             <ImageButton
                 android:id="@+id/reloadBtn"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_marginStart="8dp"
                 android:background="@drawable/circle_btn_bg"
                 android:src="@drawable/ic_reload"
@@ -210,12 +405,12 @@
 
             <ImageButton
                 android:id="@+id/homeBtn"
-                android:layout_width="38dp"
-                android:layout_height="38dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:layout_marginStart="8dp"
                 android:background="@drawable/circle_btn_bg"
                 android:src="@drawable/ic_home"
-                android:contentDescription="Home" />
+                android:contentDescription="Shortcuts" />
         </LinearLayout>
 
         <TextView
@@ -223,7 +418,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="OPEN TABS"
-            android:textColor="#9A9A9A"
+            android:textColor="@color/relay_faint"
             android:textSize="11sp"
             android:letterSpacing="0.1" />
 
@@ -246,7 +441,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
             android:text="SHORTCUT"
-            android:textColor="#9A9A9A"
+            android:textColor="@color/relay_faint"
             android:textSize="11sp"
             android:letterSpacing="0.1" />
 
@@ -263,6 +458,19 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:columnCount="4" />
+
+        <!-- End the session and go back to the connect card. -->
+        <Button
+            android:id="@+id/disconnectBtn"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:text="Disconnect"
+            android:textAllCaps="false"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/relay_red"
+            android:background="@drawable/danger_btn_bg" />
     </LinearLayout>
 
     <!-- edge handle sits above everything -->
