@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The tile of a tool: a soft raised square (the web client's .tool). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/relay_raised" />
+    <corners android:radius="12dp" />
+</shape>

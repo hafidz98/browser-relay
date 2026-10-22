@@ -53,7 +53,13 @@ public class RelayClient {
     }
 
     public interface Listener {
-        void onWelcome(boolean driver, boolean browserUp, boolean mobile);
+        /**
+         * @param host the name of the PC we are talking to (the relay
+         *             sends it with the welcome), or "" when it did
+         *             not say.
+         */
+        void onWelcome(boolean driver, boolean browserUp, boolean mobile,
+                       String host);
         void onStatus(boolean browserUp);
         /** The page is in the background: the picture is frozen. */
         void onPaused(boolean paused);
@@ -309,7 +315,8 @@ public class RelayClient {
                 // the PC answers our pings, so a read timeout is safe.
                 if (ws != null) ws.setReadTimeoutMs(READ_TIMEOUT_MS);
                 listener.onWelcome(driver, m.optBoolean("browserUp", true),
-                        m.optBoolean("mobile", false));
+                        m.optBoolean("mobile", false),
+                        m.optString("host", ""));
                 if (m.has("paused")) listener.onPaused(m.optBoolean("paused", false));
                 if (m.has("flagsOk")) listener.onFlagsOk(m.optBoolean("flagsOk", true));
                 // The page must be rendered for THIS device: tell the PC

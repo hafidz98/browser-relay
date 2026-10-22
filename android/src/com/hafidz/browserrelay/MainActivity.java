@@ -150,9 +150,7 @@ public class MainActivity extends Activity
 
     // ---- design helpers (match mockup) ----
 
-    // Home fields.
-    private View homeView;
-    private GridLayout homeGrid;
+    // The shortcut grid of the beranda (the sites the user saved).
     private boolean homeEditing;
     // Open tabs cache (for shortcut highlight).
     private java.util.List<RelayClient.TabInfo> openTabs =
@@ -163,7 +161,7 @@ public class MainActivity extends Activity
         TextView tv = new TextView(this);
         tv.setText(text);
         tv.setTextSize(11);
-        tv.setTextColor(0xFF9A9A9A);
+        tv.setTextColor(getColor(R.color.relay_muted));
         tv.setTypeface(null, android.graphics.Typeface.BOLD);
         tv.setLetterSpacing(0.08f);
         return tv;
@@ -173,7 +171,7 @@ public class MainActivity extends Activity
     private android.graphics.drawable.GradientDrawable makeCardBg(int borderColor) {
         android.graphics.drawable.GradientDrawable bg =
                 new android.graphics.drawable.GradientDrawable();
-        bg.setColor(0xFF1E1E1E);
+        bg.setColor(getColor(R.color.relay_panel));
         bg.setCornerRadius(dp(14));
         bg.setStroke((int) dp(1), borderColor);
         return bg;
@@ -192,6 +190,35 @@ public class MainActivity extends Activity
         return dot;
     }
 
+    // ---- the beranda (the home screen) ----
+    /** The beranda layer: the home screen with the state and the tools. */
+    private View berandaView;
+    private GridLayout shortcutGrid;
+    private TextView berandaState;
+    private TextView berandaLatency;
+    private TextView berandaDevice;
+    private TextView berandaPcName;
+    private TextView berandaAddress;
+    private TextView berandaRole;
+    private TextView berandaError;
+    private View berandaDot;
+    private View berandaReconnect;
+    private View berandaTakeover;
+    /** The remote view is in front of the beranda (the user opened it). */
+    private boolean remoteOpen = false;
+    /**
+     * The relay does not know this device (or the code was refused):
+     * the connect card is the screen until the pairing worked.
+     */
+    private boolean pairingRequired = false;
+    /**
+     * The user opened the connect card on purpose (to fix the
+     * address). It closes again when the pairing worked.
+     */
+    private boolean connectCardOpen = false;
+    /** The name of the PC we drive (the relay sends it with the welcome). */
+    private String peerHost = "";
+
     // ---- home (beranda) ----
     /** The last connection failure, shown next to the Connect button. */
     private String lastConnError = "";
@@ -208,6 +235,253 @@ public class MainActivity extends Activity
             {"GitHub", "github.com", "#24292F"},
             {"Wikipedia", "wikipedia.org", "#636363"},
     };
+
+    // The tools of the beranda: icon, label, action. The first tile
+    // opens the remote view - that is the way into the browser.
+    private static final String[] BERANDA_TOOL_LABELS = {
+            "Remote", "Back", "Forward", "Reload",
+            "Home", "Find", "Keyboard", "Paste",
+            "Copy link", "Zoom", "Settings", "Disconnect"
+    };
+    private static final int[] BERANDA_TOOL_ICONS = {
+            R.drawable.ic_desktop, R.drawable.ic_back, R.drawable.ic_forward,
+            R.drawable.ic_reload, R.drawable.ic_home, R.drawable.ic_find,
+            R.drawable.ic_keyboard, R.drawable.ic_paste, R.drawable.ic_link,
+            R.drawable.ic_zoom, R.drawable.ic_settings, R.drawable.ic_link_off
+    };
+    private static final String[] BERANDA_TOOL_ACTIONS = {
+            "remote", "back", "forward", "reload",
+            "home", "find", "keyboard", "paste",
+            "copylink", "zoom", "settings", "disconnect"
+    };
+
+    /** The status row at the top of the beranda. */
+    private void buildBerandaStatus(LinearLayout col) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding((int) dp(14), (int) dp(12), (int) dp(14), (int) dp(12));
+        android.graphics.drawable.GradientDrawable bg =
+                new android.graphics.drawable.GradientDrawable();
+        bg.setColor(getColor(R.color.relay_panel));
+        bg.setCornerRadius(dp(14));
+        bg.setStroke((int) dp(1), getColor(R.color.relay_border));
+        card.setBackground(bg);
+
+        berandaDot = makeDot(getColor(R.color.relay_faint), 8);
+        card.addView(berandaDot);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        tlp.setMarginStart((int) dp(10));
+        texts.setLayoutParams(tlp);
+
+        berandaState = new TextView(this);
+        berandaState.setText("Not connected");
+        berandaState.setTextSize(14);
+        berandaState.setTextColor(getColor(R.color.relay_text));
+        berandaState.setSingleLine(true);
+        berandaState.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        texts.addView(berandaState);
+
+        berandaDevice = new TextView(this);
+        berandaDevice.setText(deviceName());
+        berandaDevice.setTextSize(11.5f);
+        berandaDevice.setTextColor(getColor(R.color.relay_muted));
+        berandaDevice.setSingleLine(true);
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dlp.topMargin = (int) dp(2);
+        berandaDevice.setLayoutParams(dlp);
+        texts.addView(berandaDevice);
+
+        card.addView(texts);
+
+        berandaLatency = new TextView(this);
+        berandaLatency.setText("— ms");
+        berandaLatency.setTextSize(12);
+        berandaLatency.setTextColor(getColor(R.color.relay_faint));
+        card.addView(berandaLatency);
+
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        col.addView(card, clp);
+    }
+
+    /** The tile that opens the remote view (the beranda's main action). */
+    private View buildRemoteTile() {
+        TextView tile = new TextView(this);
+        tile.setText("Open the remote view");
+        tile.setTextSize(14);
+        tile.setTextColor(getColor(R.color.relay_text));
+        tile.setGravity(Gravity.CENTER);
+        tile.setPadding((int) dp(14), (int) dp(16), (int) dp(14), (int) dp(16));
+        android.graphics.drawable.GradientDrawable bg =
+                new android.graphics.drawable.GradientDrawable();
+        bg.setColor(getColor(R.color.relay_accent));
+        bg.setCornerRadius(dp(12));
+        tile.setBackground(bg);
+        tile.setOnClickListener(v -> openRemote());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins((int) dp(16), (int) dp(12), (int) dp(16), (int) dp(4));
+        tile.setLayoutParams(lp);
+        return tile;
+    }
+
+    /** One line of the connection info: a muted key and its value. */
+    private void addInfoRow(LinearLayout card, String key, TextView value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, (int) dp(6), 0, (int) dp(6));
+        TextView k = new TextView(this);
+        k.setText(key);
+        k.setTextSize(12);
+        k.setTextColor(getColor(R.color.relay_faint));
+        row.addView(k, new LinearLayout.LayoutParams(
+                (int) dp(76), ViewGroup.LayoutParams.WRAP_CONTENT));
+        value.setTextSize(13);
+        value.setTextColor(getColor(R.color.relay_text));
+        value.setSingleLine(true);
+        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        row.addView(value, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        card.addView(row);
+    }
+
+    /** A small pill button (the web client's accent pill). */
+    private View makePillButton(String label, int accent, View.OnClickListener onClick) {
+        TextView btn = new TextView(this);
+        btn.setText(label);
+        btn.setTextSize(13);
+        btn.setTextColor(accent);
+        btn.setGravity(Gravity.CENTER);
+        btn.setPadding((int) dp(14), (int) dp(11), (int) dp(14), (int) dp(11));
+        android.graphics.drawable.GradientDrawable bg =
+                new android.graphics.drawable.GradientDrawable();
+        bg.setColor(getColor(R.color.relay_field));
+        bg.setCornerRadius(dp(999));
+        bg.setStroke((int) dp(1), accent);
+        btn.setBackground(bg);
+        btn.setOnClickListener(onClick);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = (int) dp(6);
+        btn.setLayoutParams(lp);
+        return btn;
+    }
+
+    /** One tool tile of the beranda: a 56dp icon with a label under it. */
+    private View makeToolTile(int iconRes, String label, String action) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER_HORIZONTAL);
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundResource(R.drawable.tool_tile_bg);
+        int size = (int) dp(56);
+        box.setLayoutParams(new LinearLayout.LayoutParams(size, size));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setLayoutParams(new FrameLayout.LayoutParams(
+                (int) dp(26), (int) dp(26), Gravity.CENTER));
+        box.addView(icon);
+        tile.addView(box);
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextSize(11);
+        name.setTextColor(getColor(R.color.relay_muted));
+        name.setGravity(Gravity.CENTER);
+        name.setSingleLine(true);
+        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        nameLp.topMargin = (int) dp(6);
+        name.setLayoutParams(nameLp);
+        tile.addView(name);
+        tile.setOnClickListener(v -> onBerandaTool(action));
+        return tile;
+    }
+
+    /** What a tool tile of the beranda does. */
+    private void onBerandaTool(String action) {
+        switch (action) {
+            case "remote":
+                openRemote();
+                break;
+            case "back":
+                relay.sendHistory("back");
+                openRemote();
+                break;
+            case "forward":
+                relay.sendHistory("forward");
+                openRemote();
+                break;
+            case "reload":
+                relay.sendTabReload();
+                openRemote();
+                break;
+            case "home":
+                askUrl();
+                break;
+            case "find":
+                askFind();
+                break;
+            case "keyboard":
+                openKeyboard();
+                break;
+            case "paste":
+                pasteFromPhone();
+                break;
+            case "copylink":
+                copyActiveLink();
+                break;
+            case "zoom":
+                soon("Zoom");
+                break;
+            case "settings":
+                soon("Settings");
+                break;
+            case "disconnect":
+                endSession();
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Copy the address of the open tab to the phone's clipboard. */
+    private void copyActiveLink() {
+        String url = "";
+        for (RelayClient.TabInfo t : openTabs) {
+            if (t.active && t.url != null && !t.url.isEmpty()) {
+                url = t.url;
+                break;
+            }
+        }
+        if (url.isEmpty()) {
+            Toast.makeText(this, "No page open yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ClipboardManager cm = (ClipboardManager)
+                getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("url", url));
+        Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show();
+    }
+
+    /** End the session: the app goes back to the connect card. */
+    private void endSession() {
+        relay.disconnect();
+        connected = false;
+        lost = false;
+        lastConnError = "";
+        updateConnectError();
+        closeSheet();
+        pairingRequired = true;
+        updateState();
+    }
 
     // ============================== lifecycle ==============================
 
@@ -275,8 +549,11 @@ public class MainActivity extends Activity
 
         handlePairIntent(getIntent());
         updateBrowserDown();
-        // Start in one state only: the connect card, until the relay
-        // says hello.
+        // The beranda is the default screen. The connect card takes
+        // over when this device is not paired yet.
+        if (prefs.getString("br_host", null) == null) {
+            pairingRequired = true;
+        }
         showConnectState();
     }
 
@@ -321,10 +598,11 @@ public class MainActivity extends Activity
 
     @Override
     public void onBackPressed() {
-        if (homeView != null && homeView.getVisibility() == View.VISIBLE) {
-            closeHome();
-        } else if (sheetOpen) {
+        if (sheetOpen) {
             closeSheet();
+        } else if (remoteOpen) {
+            // The back button brings the beranda back.
+            closeRemote();
         } else {
             super.onBackPressed();
         }
@@ -365,6 +643,7 @@ public class MainActivity extends Activity
         String hostPort = prefs.getString("br_host", null);
         if (hostPort == null) {
             // No saved host: show the connect card and wait for the user.
+            pairingRequired = true;
             showConnectState();
             return;
         }
@@ -375,6 +654,7 @@ public class MainActivity extends Activity
             lastConnError = addr.error;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
             updateConnectError();
+            pairingRequired = true;
             showConnectState();
             return;
         }
@@ -403,11 +683,20 @@ public class MainActivity extends Activity
     // ============================== RelayClient.Listener ==============================
 
     @Override
-    public void onWelcome(boolean driver, boolean browserUp, boolean mobile) {
+    public void onWelcome(boolean driver, boolean browserUp, boolean mobile,
+                          String host) {
         connected = true;
         lost = false;
+        // The pairing worked: the beranda is the screen now.
+        boolean wasPairing = pairingRequired;
+        pairingRequired = false;
+        connectCardOpen = false;
+        // The pairing lands on the beranda, not on the remote view.
+        // A later reconnect keeps the screen the user was on.
+        if (wasPairing) remoteOpen = false;
         this.browserUp = browserUp;
         this.mobile = mobile;
+        if (host != null && !host.isEmpty()) peerHost = host;
         // The pairing code is burned by the relay: forget it, so the next
         // connect authenticates with the fingerprint alone.
         prefs.edit().remove("br_token").apply();
@@ -422,14 +711,6 @@ public class MainActivity extends Activity
         Log.i(TAG, "welcome driver=" + driver + " browserUp=" + browserUp);
         // The PC renders the page for whoever drives: tell it our size.
         updateViewSize();
-        if (firstWelcome) {
-            firstWelcome = false;
-            hint.setVisibility(View.VISIBLE);
-            hint.setAlpha(1f);
-            hint.setOnClickListener(v -> hint.setVisibility(View.GONE));
-            handler.postDelayed(() -> hint.animate().alpha(0f).setDuration(400)
-                    .withEndAction(() -> hint.setVisibility(View.GONE)), 6000);
-        }
     }
 
     @Override
@@ -555,7 +836,15 @@ public class MainActivity extends Activity
     @Override
     public void onLatency(long ms) {
         latencyText.setText(ms + " ms");
-        int color = ms < 120 ? 0xFF3FB950 : ms < 350 ? 0xFFD29922 : 0xFFF85149;
+        if (berandaLatency != null) berandaLatency.setText(ms + " ms");
+        int color;
+        if (ms < 120) {
+            color = getColor(R.color.relay_green);
+        } else if (ms < 350) {
+            color = getColor(R.color.relay_yellow);
+        } else {
+            color = getColor(R.color.relay_red);
+        }
         statusDot.setBackgroundTintList(ColorStateList.valueOf(color));
     }
 
@@ -602,7 +891,7 @@ public class MainActivity extends Activity
         runOnUiThread(() -> {
             renderTabs(tabs);
             // Refresh shortcut highlights.
-            if (homeGrid != null) renderHome();
+            if (shortcutGrid != null) renderHome();
             renderSheetShortcuts();
         });
     }
@@ -665,9 +954,13 @@ public class MainActivity extends Activity
         // came up is "not connected": the user gets the card with the
         // reason on it.
         lost = hadSession;
+        // A lost session brings the remote view forward: the lost
+        // banner lives there.
+        if (lost) remoteOpen = true;
         runOnUiThread(() -> {
             latencyText.setText("— ms");
-            statusDot.setBackgroundTintList(ColorStateList.valueOf(0xFF8A8A8A));
+            statusDot.setBackgroundTintList(
+                    ColorStateList.valueOf(getColor(R.color.relay_faint)));
             updateBrowserDown();
             updateTakeover();
             updateState();
@@ -867,23 +1160,17 @@ public class MainActivity extends Activity
         reloadBtn.setOnClickListener(v -> relay.sendTabReload());
         urlText.setOnClickListener(v -> askUrl());
         findViewById(R.id.homeBtn).setOnClickListener(v -> {
+            // The Home button brings the beranda back (the web client
+            // does the same: the sheet closes and the home screen opens).
             closeSheet();
-            openHome();
+            closeRemote();
         });
         findViewById(R.id.launchChromeBtn).setOnClickListener(v -> {
             relay.sendChrome("launch");
             Toast.makeText(this, "Chrome launching…", Toast.LENGTH_SHORT).show();
         });
         // End the session: the app goes back to the connect card.
-        findViewById(R.id.disconnectBtn).setOnClickListener(v -> {
-            relay.disconnect();
-            connected = false;
-            lost = false;
-            lastConnError = "";
-            updateConnectError();
-            closeSheet();
-            updateState();
-        });
+        findViewById(R.id.disconnectBtn).setOnClickListener(v -> endSession());
         // Shortcut grid in the sheet (mirrors beranda, for quick access
         // from the viewport without going back home).
         renderSheetShortcuts();
@@ -1063,11 +1350,16 @@ public class MainActivity extends Activity
         return pill;
     }
 
-    // ============================== home (beranda) ==============================
+    // ============================== the beranda ==============================
 
+    /**
+     * The beranda is the home screen of the phone: the state of the
+     * connection, the tools and the shortcuts. The remote view is one
+     * tap away (the "Remote" tile).
+     */
     private void setupHome() {
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
-        scroll.setBackgroundColor(0xFF161616);
+        scroll.setBackgroundColor(getColor(R.color.relay_bg));
         scroll.setVisibility(View.GONE);
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -1078,11 +1370,12 @@ public class MainActivity extends Activity
         scroll.addView(col, new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        // header
+        int hp = (int) dp(16);
+
+        // ---- the header (the web client's home header) ----
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        int hp = (int) dp(16);
         header.setPadding(hp, (int) dp(14), hp, (int) dp(12));
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
@@ -1092,41 +1385,90 @@ public class MainActivity extends Activity
         TextView h1 = new TextView(this);
         h1.setText("Home");
         h1.setTextSize(20);
-        h1.setTextColor(0xFFDADADA);
+        h1.setTextColor(getColor(R.color.relay_text));
         h1.setTypeface(null, android.graphics.Typeface.BOLD);
         titles.addView(h1);
+        TextView h2 = new TextView(this);
+        h2.setText("Tools and the PC connection");
+        h2.setTextSize(12);
+        h2.setTextColor(getColor(R.color.relay_muted));
+        titles.addView(h2);
         header.addView(titles);
         col.addView(header);
 
-        // The pairing card and the status row live in the layout
-        // (connectCard / statusBar): the beranda is only the
-        // shortcuts, so exactly one state is on screen at a time.
+        // ---- the state of the connection ----
+        buildBerandaStatus(col);
 
-        // search box (mockup: 10px radius, not pill).
-        TextView search = new TextView(this);
-        search.setText("\uD83D\uDD0D  Search or type URL…");
-        search.setTextSize(13);
-        search.setTextColor(0xFF6B6B6B);
-        search.setPadding((int) dp(12), (int) dp(12), (int) dp(12), (int) dp(12));
-        android.graphics.drawable.GradientDrawable sbg =
-                new android.graphics.drawable.GradientDrawable();
-        sbg.setColor(0xFF1E1E1E);
-        sbg.setCornerRadius(dp(10));
-        sbg.setStroke((int) dp(1), 0xFF333333);
-        search.setBackground(sbg);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+        // ---- the tools ----
+        col.addView(makeSectionLabel("TOOLS"));
+        GridLayout tools = new GridLayout(this);
+        tools.setColumnCount(4);
+        for (int i = 0; i < BERANDA_TOOL_ACTIONS.length; i++) {
+            View tile = makeToolTile(BERANDA_TOOL_ICONS[i], BERANDA_TOOL_LABELS[i],
+                    BERANDA_TOOL_ACTIONS[i]);
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
+                    GridLayout.spec(i / 4), GridLayout.spec(i % 4, 1f));
+            lp.width = 0;
+            lp.setMargins((int) dp(3), (int) dp(3), (int) dp(3), (int) dp(3));
+            tile.setLayoutParams(lp);
+            tools.addView(tile);
+        }
+        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        sp.setMargins(hp, (int) dp(6), hp, (int) dp(12));
-        search.setLayoutParams(sp);
-        search.setOnClickListener(v -> askUrl());
-        col.addView(search);
+        toolsLp.setMargins(hp, (int) dp(8), hp, (int) dp(16));
+        tools.setLayoutParams(toolsLp);
+        col.addView(tools);
 
-        // APLIKASI row: label left, edit button right (inline).
+        // ---- the connection info ----
+        col.addView(makeSectionLabel("CONNECTION"));
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding((int) dp(14), (int) dp(6), (int) dp(14), (int) dp(6));
+        card.setBackground(makeCardBg(getColor(R.color.relay_border)));
+        berandaPcName = new TextView(this);
+        berandaAddress = new TextView(this);
+        berandaRole = new TextView(this);
+        addInfoRow(card, "PC", berandaPcName);
+        addInfoRow(card, "Address", berandaAddress);
+        addInfoRow(card, "Role", berandaRole);
+        berandaError = new TextView(this);
+        berandaError.setTextSize(12);
+        berandaError.setTextColor(getColor(R.color.relay_red));
+        berandaError.setVisibility(View.GONE);
+        LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        errLp.topMargin = (int) dp(6);
+        berandaError.setLayoutParams(errLp);
+        card.addView(berandaError);
+
+        // Take over (when we only watch) and Reconnect (when the link
+        // died) sit at the bottom of the card: one thumb reaches them.
+        berandaTakeover = makePillButton("Take over", getColor(R.color.relay_accent),
+                v -> {
+                    relay.sendTakeover();
+                    Toast.makeText(this, "Taking over the remote view",
+                            Toast.LENGTH_SHORT).show();
+                });
+        berandaReconnect = makePillButton("Reconnect", getColor(R.color.relay_accent),
+                v -> {
+                    lastConnError = "";
+                    updateConnectError();
+                    userReconnect();
+                });
+        card.addView(berandaTakeover);
+        card.addView(berandaReconnect);
+        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardLp.setMargins(hp, (int) dp(8), hp, (int) dp(20));
+        card.setLayoutParams(cardLp);
+        col.addView(card);
+
+        // ---- the shortcuts the user saved ----
         LinearLayout secRow = new LinearLayout(this);
         secRow.setOrientation(LinearLayout.HORIZONTAL);
         secRow.setGravity(Gravity.CENTER_VERTICAL);
-        secRow.setPadding(hp, (int) dp(8), hp, 0);
-        TextView sec = makeSectionLabel("APPS");
+        secRow.setPadding(hp, 0, hp, 0);
+        TextView sec = makeSectionLabel("SHORTCUTS");
         LinearLayout.LayoutParams secLp = new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         sec.setLayoutParams(secLp);
@@ -1134,9 +1476,10 @@ public class MainActivity extends Activity
         final android.widget.ImageButton editBtn = new android.widget.ImageButton(this);
         editBtn.setImageResource(R.drawable.ic_pencil);
         editBtn.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        int ebs = (int) dp(32);
-        editBtn.setLayoutParams(new LinearLayout.LayoutParams(ebs, ebs));
         editBtn.setBackground(null);
+        editBtn.setContentDescription("Edit shortcuts");
+        int ebs = (int) dp(44);
+        editBtn.setLayoutParams(new LinearLayout.LayoutParams(ebs, ebs));
         editBtn.setOnClickListener(v -> {
             homeEditing = !homeEditing;
             editBtn.setImageResource(homeEditing ? R.drawable.ic_check : R.drawable.ic_pencil);
@@ -1145,16 +1488,17 @@ public class MainActivity extends Activity
         secRow.addView(editBtn);
         col.addView(secRow);
 
-        homeGrid = new GridLayout(this);
-        homeGrid.setColumnCount(4);
+        shortcutGrid = new GridLayout(this);
+        shortcutGrid.setColumnCount(4);
         LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        glp.setMargins(hp, (int) dp(12), hp, (int) dp(24));
-        homeGrid.setLayoutParams(glp);
-        col.addView(homeGrid);
+        glp.setMargins(hp, (int) dp(8), hp, (int) dp(24));
+        shortcutGrid.setLayoutParams(glp);
+        col.addView(shortcutGrid);
 
-        homeView = scroll;
-        root.addView(homeView);
+        berandaView = scroll;
+        // Above the remote screen, below the connect card.
+        root.addView(berandaView, 1);
         renderHome();
     }
 
@@ -1192,17 +1536,22 @@ public class MainActivity extends Activity
     }
 
     /**
-     * The one state on screen: not connected, connected, or the
-     * connection was lost. Exactly one of the three is visible, and
-     * the status information lives in one place - the status bar.
+     * The one state on screen: the connect card (the device is not
+     * paired yet), the beranda (the default screen) or the remote view
+     * (the user opened it from the beranda).
+     *
+     * <p>Exactly one of them is in front. The status information lives
+     * in one place - the status bar of the remote view, and the status
+     * area of the beranda.
      */
     private void updateState() {
         runOnUiThread(() -> {
             boolean wasConnectCard = connectCard != null
                     && connectCard.getVisibility() == View.VISIBLE;
-            // Exactly one state at a time.
-            boolean showConnect = !connected && !lost;
-            boolean showBanner = lost;
+            // The connect card is the screen while the device is not
+            // paired, or while the user asked for it.
+            boolean showConnect = pairingRequired || connectCardOpen;
+            // The remote view is alive as soon as there is a session.
             boolean showRemote = connected || lost;
 
             if (connectCard != null) {
@@ -1212,16 +1561,25 @@ public class MainActivity extends Activity
                 statusBar.setVisibility(showRemote ? View.VISIBLE : View.GONE);
             }
             if (lostBanner != null) {
-                lostBanner.setVisibility(showBanner ? View.VISIBLE : View.GONE);
+                lostBanner.setVisibility(lost ? View.VISIBLE : View.GONE);
             }
             // The remote view only shows once there is a session.
             if (frameView != null) {
                 frameView.setVisibility(showRemote ? View.VISIBLE : View.INVISIBLE);
             }
-            // The tools belong to a live session.
-            if (handle != null) {
-                handle.setVisibility(showRemote ? View.VISIBLE : View.GONE);
+            // The beranda is the default screen: it covers the remote
+            // view until the user opens the remote view from it.
+            if (berandaView != null) {
+                boolean berandaOn = !showConnect && !remoteOpen;
+                berandaView.setVisibility(berandaOn ? View.VISIBLE : View.GONE);
             }
+            // The edge handle belongs to the remote view (the web
+            // client hides it on the home screen too).
+            if (handle != null) {
+                boolean handleOn = remoteOpen && showRemote;
+                handle.setVisibility(handleOn ? View.VISIBLE : View.GONE);
+            }
+            updateBeranda();
 
             if (statusText != null) {
                 if (connected) {
@@ -1249,7 +1607,9 @@ public class MainActivity extends Activity
                 serverInput.setText(prefs.getString("br_host", ""));
             }
             // Dim shortcuts when there is no session to drive.
-            if (homeGrid != null) homeGrid.setAlpha(connected ? 1f : 0.35f);
+            if (shortcutGrid != null) {
+                shortcutGrid.setAlpha(connected ? 1f : 0.35f);
+            }
             if (wasConnectCard && showConnect) {
                 // The card just came back: the keyboard may be in the way.
                 serverInput.requestFocus();
@@ -1257,11 +1617,102 @@ public class MainActivity extends Activity
         });
     }
 
-    /** The not-connected state. */
+    /** The not-connected state: the connect card is the screen. */
     private void showConnectState() {
         connected = false;
         lost = false;
         updateState();
+    }
+
+    /**
+     * Open the remote view: the user drives the browser from here.
+     * The back button brings the beranda back.
+     */
+    private void openRemote() {
+        if (!connected) {
+            // Nothing to drive yet: the connect card says why.
+            updateState();
+            return;
+        }
+        remoteOpen = true;
+        updateState();
+        if (firstWelcome) {
+            // The handle on the edge is how the tools open: say so once,
+            // the first time the user is in the remote view.
+            firstWelcome = false;
+            hint.setVisibility(View.VISIBLE);
+            hint.setAlpha(1f);
+            hint.setOnClickListener(v -> hint.setVisibility(View.GONE));
+            handler.postDelayed(() -> hint.animate().alpha(0f).setDuration(400)
+                    .withEndAction(() -> hint.setVisibility(View.GONE)), 6000);
+        }
+    }
+
+    /** Back to the beranda. */
+    private void closeRemote() {
+        remoteOpen = false;
+        updateState();
+    }
+
+    /**
+     * The beranda shows the state of the connection: the state, the
+     * round trip time, the device name and the connection info.
+     */
+    private void updateBeranda() {
+        if (berandaView == null) return;
+        String host = prefs.getString("br_host", "");
+        if (berandaState != null) {
+            String t;
+            if (connected) {
+                t = roleLabel.isEmpty() ? "Connected" : roleLabel;
+                if (!host.isEmpty()) t += " · " + host;
+            } else if (lost) {
+                t = "Connection lost";
+            } else if (pairingRequired) {
+                t = "Not paired";
+            } else {
+                t = "Connecting…";
+            }
+            berandaState.setText(t);
+        }
+        if (berandaDot != null) {
+            int color;
+            if (connected) {
+                color = getColor(R.color.relay_green);
+            } else if (lost) {
+                color = getColor(R.color.relay_red);
+            } else {
+                color = getColor(R.color.relay_faint);
+            }
+            berandaDot.setBackgroundTintList(ColorStateList.valueOf(color));
+        }
+        if (berandaDevice != null) {
+            // The name of the PC we drive, and this phone below it.
+            berandaDevice.setText(peerHost.isEmpty() ? deviceName() : peerHost);
+        }
+        if (berandaPcName != null) {
+            berandaPcName.setText(peerHost.isEmpty() ? "—" : peerHost);
+        }
+        if (berandaAddress != null) {
+            berandaAddress.setText(host.isEmpty() ? "—" : host);
+        }
+        if (berandaRole != null) {
+            berandaRole.setText(roleLabel.isEmpty() ? "—" : roleLabel);
+        }
+        if (berandaError != null) {
+            boolean show = !connected && !lastConnError.isEmpty();
+            berandaError.setVisibility(show ? View.VISIBLE : View.GONE);
+            berandaError.setText(lastConnError);
+        }
+        if (berandaTakeover != null) {
+            // Take over only makes sense while we only watch.
+            berandaTakeover.setVisibility(
+                    connected && !relay.isDriver() ? View.VISIBLE : View.GONE);
+        }
+        if (berandaReconnect != null) {
+            berandaReconnect.setVisibility(
+                    !connected ? View.VISIBLE : View.GONE);
+        }
     }
 
     /** The line under the Connect button: what is wrong, or what to do. */
@@ -1286,14 +1737,18 @@ public class MainActivity extends Activity
             lastConnError = "this phone is not paired yet - enter the "
                     + "6 digit code from the PC panel";
             lastConnErrorKind = WsClient.Failure.NOT_PAIRED;
+            // The device is not paired: the connect card is the screen.
+            pairingRequired = true;
         } else if (m.contains("bad token") || m.contains("invalid token")
                 || m.contains("expired")) {
             lastConnError = "that code was refused - enter the current "
                     + "6 digit code from the PC panel";
             lastConnErrorKind = WsClient.Failure.BAD_CODE;
+            pairingRequired = true;
         } else {
             lastConnError = msg == null ? "the relay refused the connection" : msg;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
+            pairingRequired = true;
         }
         updateConnectError();
     }
@@ -1351,7 +1806,7 @@ public class MainActivity extends Activity
     }
 
     private void renderHome() {
-        homeGrid.removeAllViews();
+        shortcutGrid.removeAllViews();
         final java.util.List<String[]> list = loadHome();
         for (int i = 0; i < list.size(); i++) {
             final int idx = i;
@@ -1368,24 +1823,24 @@ public class MainActivity extends Activity
             TextView icon = new TextView(this);
             icon.setText(s[0].isEmpty() ? "?" : s[0].substring(0, 1).toUpperCase());
             icon.setTextSize(24);
-            icon.setTextColor(0xFFFFFFFF);
+            icon.setTextColor(getColor(R.color.relay_text));
             icon.setGravity(Gravity.CENTER);
             android.graphics.drawable.GradientDrawable bg =
                     new android.graphics.drawable.GradientDrawable();
             try {
                 bg.setColor(Color.parseColor(s[2]));
             } catch (Exception e) {
-                bg.setColor(0xFF8B72F0);
+                bg.setColor(getColor(R.color.relay_accent));
             }
             bg.setCornerRadius(dp(14));
             // Highlight if this shortcut's tab is open in Chrome.
             boolean tabOpen = isTabOpen(s[1]);
             if (tabOpen) {
-                bg.setStroke((int) dp(2), 0xFF8B72F0);
+                bg.setStroke((int) dp(2), getColor(R.color.relay_accent));
             }
             icon.setBackground(bg);
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
-                    (int) dp(52), (int) dp(52));
+                    (int) dp(56), (int) dp(56));
             icon.setLayoutParams(ilp);
             // Wrap icon in FrameLayout for the green dot overlay.
             FrameLayout iconWrap = new FrameLayout(this);
@@ -1398,8 +1853,8 @@ public class MainActivity extends Activity
                 android.graphics.drawable.GradientDrawable dotBg =
                         new android.graphics.drawable.GradientDrawable();
                 dotBg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-                dotBg.setColor(0xFF4CAF50);
-                dotBg.setStroke((int) dp(1), 0xFF161616);
+                dotBg.setColor(getColor(R.color.relay_green));
+                dotBg.setStroke((int) dp(1), getColor(R.color.relay_bg));
                 dot.setBackground(dotBg);
                 FrameLayout.LayoutParams dotLp = new FrameLayout.LayoutParams(
                         (int) dp(12), (int) dp(12), Gravity.TOP | Gravity.END);
@@ -1410,7 +1865,7 @@ public class MainActivity extends Activity
             TextView label = new TextView(this);
             label.setText(s[0]);
             label.setTextSize(11);
-            label.setTextColor(0xFFDADADA);
+            label.setTextColor(getColor(R.color.relay_text));
             label.setGravity(Gravity.CENTER);
             label.setSingleLine(true);
             label.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1424,7 +1879,7 @@ public class MainActivity extends Activity
                 TextView openLabel = new TextView(this);
                 openLabel.setText("● open");
                 openLabel.setTextSize(9);
-                openLabel.setTextColor(0xFF4CAF50);
+                openLabel.setTextColor(getColor(R.color.relay_green));
                 openLabel.setGravity(Gravity.CENTER);
                 tile.addView(openLabel);
             }
@@ -1433,11 +1888,11 @@ public class MainActivity extends Activity
                 TextView del = new TextView(this);
                 del.setText("×");
                 del.setTextSize(15);
-                del.setTextColor(0xFFFFFFFF);
+                del.setTextColor(getColor(R.color.relay_text));
                 del.setGravity(Gravity.CENTER);
                 android.graphics.drawable.GradientDrawable dbg =
                         new android.graphics.drawable.GradientDrawable();
-                dbg.setColor(0xFFF85149);
+                dbg.setColor(getColor(R.color.relay_red));
                 dbg.setCornerRadius(dp(12));
                 del.setBackground(dbg);
                 FrameLayout wrapper = new FrameLayout(this);
@@ -1459,7 +1914,7 @@ public class MainActivity extends Activity
                         GridLayout.spec(i / 4), GridLayout.spec(i % 4, 1f));
                 wlp.width = 0;
                 wrapper.setLayoutParams(wlp);
-                homeGrid.addView(wrapper);
+                shortcutGrid.addView(wrapper);
             } else {
                 tile.setOnClickListener(v -> {
                     // Gate 2: Chrome must be running.
@@ -1478,9 +1933,10 @@ public class MainActivity extends Activity
                     } else {
                         relay.sendTabNew(s[1]);
                     }
-                    closeHome();
+                    // The shortcut opened a page: show it.
+                    openRemote();
                 });
-                homeGrid.addView(tile);
+                shortcutGrid.addView(tile);
             }
         }
         if (!homeEditing) {
@@ -1496,11 +1952,11 @@ public class MainActivity extends Activity
             TextView plus = new TextView(this);
             plus.setText("+");
             plus.setTextSize(28);
-            plus.setTextColor(0xFF9A9A9A);
+            plus.setTextColor(getColor(R.color.relay_muted));
             plus.setGravity(Gravity.CENTER);
             android.graphics.drawable.GradientDrawable pbg =
                     new android.graphics.drawable.GradientDrawable();
-            pbg.setStroke((int) dp(1.5f), 0xFF454545);
+            pbg.setStroke((int) dp(1.5f), getColor(R.color.relay_border));
             pbg.setCornerRadius(dp(16));
             plus.setBackground(pbg);
             plus.setLayoutParams(new LinearLayout.LayoutParams((int) dp(60), (int) dp(60)));
@@ -1508,7 +1964,7 @@ public class MainActivity extends Activity
             TextView alabel = new TextView(this);
             alabel.setText("Add");
             alabel.setTextSize(11.5f);
-            alabel.setTextColor(0xFFDADADA);
+            alabel.setTextColor(getColor(R.color.relay_text));
             alabel.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams allp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1516,7 +1972,7 @@ public class MainActivity extends Activity
             alabel.setLayoutParams(allp);
             add.addView(alabel);
             add.setOnClickListener(v -> askAddShortcut());
-            homeGrid.addView(add);
+            shortcutGrid.addView(add);
         }
     }
 
@@ -1554,19 +2010,6 @@ public class MainActivity extends Activity
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
-    }
-
-    private void openHome() {
-        homeEditing = false;
-        renderHome();
-        updateState();
-        homeView.setVisibility(View.VISIBLE);
-        homeView.bringToFront();
-    }
-
-    private void closeHome() {
-        homeEditing = false;
-        if (homeView != null) homeView.setVisibility(View.GONE);
     }
 
     private void askUrl() {
