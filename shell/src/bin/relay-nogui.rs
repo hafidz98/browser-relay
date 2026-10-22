@@ -11,7 +11,7 @@ pub mod config;
 #[path = "../relay/mod.rs"]
 pub mod relay;
 
-pub const VERSION: &str = "0.9.63";
+pub const VERSION: &str = "0.9.64";
 
 use relay::RelayHandle;
 

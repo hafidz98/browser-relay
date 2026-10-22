@@ -152,7 +152,7 @@ jobs:
       - name: Build APK
         run: |
           export ANDROID_HOME=$ANDROID_SDK_ROOT
-          bash android/build.sh 25 2.5
+          bash android/build.sh 25 2.6
 
       # The server serves the APK as /app.apk from a file called
       # browser-relay.apk, so give the artifact that exact name.
