@@ -160,10 +160,14 @@ extern "system" {
     ) -> i32;
 }
 
-/// Window-region rounded corners: the approach that works on every
-/// Windows version (Win10 has no DWM corner rounding, and per-pixel
-/// alpha windows are disqualified from it anyway). Clips the window
-/// shape itself via a rounded-rect region; reapplied on resize.
+// Window-region rounded corners: the approach that works on every
+// Windows version (Win10 has no DWM corner rounding, and per-pixel
+// alpha windows are disqualified from it anyway). Clips the window
+// shape itself via a rounded-rect region; reapplied on resize.
+//
+// A plain comment, not a doc comment: rustdoc does not document
+// extern blocks, so a doc comment here is an unused-doc-comment
+// warning.
 #[cfg(windows)]
 #[link(name = "gdi32")]
 extern "system" {
@@ -414,8 +418,8 @@ fn spawn_tray_watcher(ctx: egui::Context, ids: TrayIds) {
         });
     // Second-instance handoff: a new exe writes the sentinel file
     // and exits; we surface the panel. Polled here (not in update)
-    // so it also works while the window is hidden.
-    let ctx3 = ctx.clone();
+    // so it also works while the window is hidden. The thread uses
+    // ctx_sentinel (cloned above), so there is nothing else to copy.
     let _ = std::thread::Builder::new()
         .name("tray-sentinel".into())
         .spawn(move || loop {
