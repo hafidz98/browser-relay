@@ -122,13 +122,21 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
             respond(&mut stream, "200 OK", "text/html; charset=utf-8", html.as_bytes()).await;
         }
         "/app.apk" => {
-            let p = chrome::config_dir().join("browser-relay.apk");
-            match tokio::fs::read(&p).await {
-                Ok(bytes) => {
-                    respond(&mut stream, "200 OK", "application/vnd.android.package-archive", &bytes)
-                        .await;
+            // Any browser-relay*.apk in the config folder works, so the
+            // file can carry its version (browser-relay-2.6.apk). The
+            // phone then saves it under that name.
+            match newest_apk().await {
+                Some((name, bytes)) => {
+                    respond_download(
+                        &mut stream,
+                        "200 OK",
+                        "application/vnd.android.package-archive",
+                        &bytes,
+                        &name,
+                    )
+                    .await;
                 }
-                Err(_) => {
+                None => {
                     respond(&mut stream, "404 Not Found", "text/plain; charset=utf-8", b"app not available yet")
                         .await;
                 }
@@ -138,6 +146,50 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
             respond(&mut stream, "404 Not Found", "text/plain; charset=utf-8", b"not found").await;
         }
     }
+}
+
+/// The newest browser-relay*.apk in the config folder, with its name.
+async fn newest_apk() -> Option<(String, Vec<u8>)> {
+    let dir = chrome::config_dir();
+    let mut entries = tokio::fs::read_dir(&dir).await.ok()?;
+    let mut best: Option<(std::time::SystemTime, String)> = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("browser-relay") || !name.ends_with(".apk") {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .await
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+            best = Some((modified, name));
+        }
+    }
+    let (_, name) = best?;
+    let bytes = tokio::fs::read(dir.join(&name)).await.ok()?;
+    Some((name, bytes))
+}
+
+/// Answer with a file the browser saves under the given name.
+async fn respond_download(
+    stream: &mut TcpStream,
+    status: &str,
+    ctype: &str,
+    body: &[u8],
+    filename: &str,
+) {
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Disposition: attachment; filename=\"{filename}\"\r\nContent-Length: {}\r\nCache-Control: no-store, no-cache, must-revalidate\r\nPragma: no-cache\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    if stream.write_all(head.as_bytes()).await.is_err() {
+        return;
+    }
+    let _ = stream.write_all(body).await;
+    let _ = stream.shutdown().await;
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, ctype: &str, body: &[u8]) {
