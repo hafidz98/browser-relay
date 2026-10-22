@@ -649,10 +649,13 @@ var qrScanned = false;
   function viewBox() {
     var rail = 0;
     if (window.innerWidth >= 900 && !document.body.classList.contains("rail-collapsed")) rail = 300;
+    // On a phone the status lives in a slim bar at the top, so the
+    // view starts below it.
+    var top = window.innerWidth < 900 ? 28 : 0;
     return {
-      x: rail, y: 0,
+      x: rail, y: top,
       w: Math.max(1, window.innerWidth - rail),
-      h: Math.max(1, window.innerHeight)
+      h: Math.max(1, window.innerHeight - top)
     };
   }
   var viewportAsks = 0;
@@ -774,7 +777,7 @@ var qrScanned = false;
           var dx = e.clientX - touchStart.x, dy = e.clientY - touchStart.y;
           if (!touchStart.moved && Math.hypot(dx, dy) > 10) touchStart.moved = true;
           if (touchStart.moved) {
-            send({ type: "wheel", x: p.x, y: p.y, dx: -dx * 0.55, dy: -dy * 0.55 , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
+            send({ type: "wheel", x: p.x, y: p.y, dx: -dx * 1.15, dy: -dy * 1.15 , iw: img.naturalWidth || 0, ih: img.naturalHeight || 0 });
             touchStart.x = e.clientX; touchStart.y = e.clientY;
             return;
           }

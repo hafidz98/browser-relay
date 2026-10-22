@@ -561,6 +561,20 @@
      are a sheet, not a permanent panel. */
   #railOpen, #railToggle { display: none; }
 
+  /* On a phone the status becomes a slim bar at the very top, so it
+     never covers the remote view. */
+  @media (max-width: 899px) {
+    #status {
+      top: 0; left: 0; right: 0; width: auto; max-width: none;
+      border-radius: 0; border-bottom: 1px solid var(--border);
+      padding: 4px 10px; font-size: 11px; gap: 6px;
+      background: var(--bg); justify-content: flex-start;
+    }
+    #screen { top: 28px; height: calc(100% - 28px); }
+    #pausedBar, #flagsBar { top: 32px; }
+    #hint { top: 34px; }
+  }
+
   /* ===== clean view (hide the client chrome) ===== */
   body.clean #status, body.clean #latency, body.clean #peer,
   body.clean #fab, body.clean #hint { opacity: 0; pointer-events: none; }
