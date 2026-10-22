@@ -5,13 +5,13 @@
     android:orientation="vertical"
     android:gravity="center"
     android:padding="28dp"
-    android:background="#161616">
+    android:background="@color/relay_bg">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Browser Relay"
-        android:textColor="#DADADA"
+        android:textColor="@color/relay_text"
         android:textSize="22sp"
         android:textStyle="bold" />
 
@@ -21,14 +21,14 @@
         android:layout_marginTop="6dp"
         android:layout_marginBottom="24dp"
         android:text="Connect to the panel on the laptop"
-        android:textColor="#9A9A9A"
+        android:textColor="@color/relay_muted"
         android:textSize="14sp" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Server (host:port)"
-        android:textColor="#9A9A9A"
+        android:textColor="@color/relay_faint"
         android:textSize="12sp" />
 
     <EditText
@@ -38,8 +38,8 @@
         android:layout_marginTop="4dp"
         android:layout_marginBottom="14dp"
         android:hint="192.168.1.10:8080"
-        android:textColor="#DADADA"
-        android:textColorHint="#6B6B6B"
+        android:textColor="@color/relay_text"
+        android:textColorHint="@color/relay_faint"
         android:inputType="textUri"
         android:singleLine="true" />
 
@@ -47,7 +47,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Pairing code (6 digits)"
-        android:textColor="#9A9A9A"
+        android:textColor="@color/relay_faint"
         android:textSize="12sp" />
 
     <EditText
@@ -57,8 +57,8 @@
         android:layout_marginTop="4dp"
         android:layout_marginBottom="22dp"
         android:hint="······"
-        android:textColor="#DADADA"
-        android:textColorHint="#6B6B6B"
+        android:textColor="@color/relay_text"
+        android:textColorHint="@color/relay_faint"
         android:inputType="number"
         android:maxLength="6"
         android:singleLine="true" />
@@ -68,15 +68,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Connect"
-        android:backgroundTint="#8B72F0"
-        android:textColor="#FFFFFF" />
+        android:textAllCaps="false"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="@color/relay_on_accent"
+        android:backgroundTint="@color/relay_accent" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="18dp"
         android:text="or scan the pairing QR from the laptop panel — the app opens automatically."
-        android:textColor="#6B6B6B"
+        android:textColor="@color/relay_faint"
         android:textSize="12sp"
         android:gravity="center" />
 

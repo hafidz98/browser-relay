@@ -18,8 +18,25 @@
     <color name="relay_yellow">#D29922</color>
     <color name="relay_red">#F85149</color>
     <color name="relay_field">#141414</color>
+    <color name="relay_chip">#B8141414</color>
 
     <!-- The scrims over the remote view. -->
     <color name="relay_scrim">#40000000</color>
     <color name="relay_scrim_strong">#D8000000</color>
+
+    <!-- White: the text and the icons on an accent button. -->
+    <color name="relay_on_accent">#FFFFFF</color>
+
+    <!-- The sheet: the grip line (the web client's sheet-line colour,
+         a little brighter so it reads on a phone) and the hairline
+         that separates the scrolling body from the pinned actions. -->
+    <color name="relay_sheet_line">#5A5A5A</color>
+    <color name="relay_sheet_border">#3D3D3D</color>
+
+    <!-- The active tab pill: the accent at 16% with a 55% border. -->
+    <color name="relay_accent_soft">#298B72F0</color>
+    <color name="relay_accent_line">#8C8B72F0</color>
+
+    <!-- The danger button: a dark red hairline. -->
+    <color name="relay_danger_line">#4A2A2A</color>
 </resources>

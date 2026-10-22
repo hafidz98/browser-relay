@@ -77,6 +77,7 @@ public class MainActivity extends Activity
     private View backdrop;
     private View hint;
     private LinearLayout sheet;
+    private android.widget.ScrollView sheetBody;
     private LinearLayout tabRow;
     private GridLayout toolGrid;
     private TextView latencyText;
@@ -192,15 +193,22 @@ public class MainActivity extends Activity
     /** The kind of the last failure (WsClient.Failure.*). */
     private int lastConnErrorKind = WsClient.Failure.UNKNOWN;
     private static final String HOME_PREFS = "br_home";
+    /**
+     * The shortcut colours are the sites' own brand colours (the web
+     * client has the same list). An empty colour means: the accent
+     * from the palette.
+     */
+    private static final String DEFAULT_SHORTCUT_COLOR = "";
+    /** The shortcuts the app offers out of the box. */
     private static final String[][] HOME_DEFAULTS = {
-            {"Facebook", "facebook.com", "#1877F2"},
-            {"YouTube", "youtube.com", "#FF0000"},
-            {"Google", "google.com", "#1A73E8"},
-            {"X", "x.com", "#000000"},
-            {"Instagram", "instagram.com", "#EE2A7B"},
-            {"TikTok", "tiktok.com", "#111111"},
-            {"GitHub", "github.com", "#24292F"},
-            {"Wikipedia", "wikipedia.org", "#636363"},
+            {"Facebook", "facebook.com"},
+            {"YouTube", "youtube.com"},
+            {"Google", "google.com"},
+            {"X", "x.com"},
+            {"Instagram", "instagram.com"},
+            {"TikTok", "tiktok.com"},
+            {"GitHub", "github.com"},
+            {"Wikipedia", "wikipedia.org"},
     };
 
     /** What a tool tile of the beranda does. */
@@ -297,6 +305,7 @@ public class MainActivity extends Activity
         backdrop = findViewById(R.id.backdrop);
         hint = findViewById(R.id.hint);
         sheet = findViewById(R.id.sheet);
+        sheetBody = findViewById(R.id.sheetBody);
         tabRow = findViewById(R.id.tabRow);
         toolGrid = findViewById(R.id.toolGrid);
         latencyText = findViewById(R.id.latencyText);
@@ -696,6 +705,8 @@ public class MainActivity extends Activity
             // Refresh shortcut highlights.
             if (shortcutGrid != null) renderHome();
             renderSheetShortcuts();
+            // The sheet grew: cap it again.
+            if (sheetOpen) sheet.post(this::layoutSheet);
         });
     }
 
@@ -998,26 +1009,28 @@ public class MainActivity extends Activity
             TextView icon = new TextView(this);
             icon.setText(s[0].substring(0, 1).toUpperCase());
             icon.setTextSize(18);
-            icon.setTextColor(0xFFDADADA);
+            icon.setTextColor(getColor(R.color.relay_text));
             icon.setGravity(Gravity.CENTER);
             android.graphics.drawable.GradientDrawable bg =
                     new android.graphics.drawable.GradientDrawable();
             bg.setCornerRadius(dp(12));
             try {
-                bg.setColor(android.graphics.Color.parseColor(s[2]));
+                bg.setColor(s[2] == null || s[2].isEmpty()
+                        ? getColor(R.color.relay_accent)
+                        : android.graphics.Color.parseColor(s[2]));
             } catch (Exception e) {
-                bg.setColor(0xFF8B72F0);
+                bg.setColor(getColor(R.color.relay_accent));
             }
             bg.setAlpha(60);
             icon.setBackground(bg);
-            int sz = (int) dp(44);
+            int sz = (int) dp(48);
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(sz, sz);
             ilp.setMargins(0, 0, 0, (int) dp(4));
             icon.setLayoutParams(ilp);
             TextView name = new TextView(this);
             name.setText(s[0]);
-            name.setTextSize(10);
-            name.setTextColor(0xFF9A9A9A);
+            name.setTextSize(11);
+            name.setTextColor(getColor(R.color.relay_muted));
             name.setGravity(Gravity.CENTER);
             name.setMaxLines(1);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1054,12 +1067,35 @@ public class MainActivity extends Activity
         sheet.animate().translationY(0).setDuration(260).start();
         // Remember where the user parked the handle so close restores it.
         preSheetHandleY = handle.getY();
+        // The sheet has to be measured before its body can be capped.
+        sheet.post(this::layoutSheet);
+    }
+
+    /**
+     * The sheet body scrolls: the tools, the tabs and the shortcuts are
+     * taller than a phone screen. The body gets at most 55% of the
+     * height, so the picture above it stays visible.
+     */
+    private void layoutSheet() {
+        if (sheetBody == null || root == null) return;
+        int max = (int) (root.getHeight() * 0.55f);
+        // The content asks for its height; the cap wins.
+        sheetBody.measure(
+                View.MeasureSpec.makeMeasureSpec(root.getWidth(),
+                        View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int content = sheetBody.getMeasuredHeight();
+        int height = Math.min(content, max);
+        ViewGroup.LayoutParams lp = sheetBody.getLayoutParams();
+        if (lp.height != height) {
+            lp.height = height;
+            sheetBody.setLayoutParams(lp);
+        }
         // Park the × above the sheet so it never covers the tool grid.
-        sheet.post(() -> {
-            int sheetH = sheet.getHeight();
+        if (sheetOpen) {
             handle.setX(rootW - dp(16) - dp(50));
-            handle.setY(rootH - sheetH - dp(16) - dp(50));
-        });
+            handle.setY(rootH - sheet.getHeight() - dp(16) - dp(50));
+        }
     }
 
     private void closeSheet() {
@@ -1095,12 +1131,13 @@ public class MainActivity extends Activity
         // "+" new-tab button
         TextView plus = new TextView(this);
         plus.setText("+");
-        plus.setTextColor(0xFF9A9A9A);
+        plus.setTextColor(getColor(R.color.relay_muted));
         plus.setTextSize(17);
         plus.setGravity(Gravity.CENTER);
         plus.setBackgroundResource(R.drawable.circle_btn_bg);
+        plus.setContentDescription("New tab");
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                (int) dp(32), (int) dp(32));
+                (int) dp(44), (int) dp(44));
         lp.setMarginStart((int) dp(7));
         plus.setLayoutParams(lp);
         plus.setOnClickListener(v -> askUrl());
@@ -1115,11 +1152,13 @@ public class MainActivity extends Activity
         pill.setBackgroundResource(t.active
                 ? R.drawable.tab_pill_active : R.drawable.tab_pill_bg);
         int pad = (int) dp(11);
-        pill.setPadding(pad, (int) dp(7), (int) dp(7), (int) dp(7));
+        pill.setPadding(pad, 0, (int) dp(4), 0);
+        // The pill is a button: it must be a thumb-sized target.
+        pill.setMinimumHeight((int) dp(44));
 
         View dot = new View(this);
         dot.setBackgroundResource(R.drawable.dot);
-        dot.setBackgroundTintList(ColorStateList.valueOf(0xFF8B72F0));
+        dot.setBackgroundTintList(ColorStateList.valueOf(getColor(R.color.relay_accent)));
         LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(
                 (int) dp(8), (int) dp(8));
         dotLp.setMarginEnd((int) dp(7));
@@ -1129,7 +1168,8 @@ public class MainActivity extends Activity
         TextView title = new TextView(this);
         String label = t.title != null && !t.title.isEmpty() ? t.title : t.url;
         title.setText(label);
-        title.setTextColor(t.active ? 0xFFDADADA : 0xFF9A9A9A);
+        title.setTextColor(t.active
+                ? getColor(R.color.relay_text) : getColor(R.color.relay_muted));
         title.setTextSize(12.5f);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1138,9 +1178,13 @@ public class MainActivity extends Activity
 
         TextView x = new TextView(this);
         x.setText("×");
-        x.setTextColor(0xFF9A9A9A);
+        x.setTextColor(getColor(R.color.relay_muted));
         x.setTextSize(14);
-        x.setPadding((int) dp(7), 0, (int) dp(2), 0);
+        x.setGravity(Gravity.CENTER);
+        x.setContentDescription("Close tab");
+        // The × is a button too: it needs a thumb-sized target.
+        x.setMinimumWidth((int) dp(44));
+        x.setMinimumHeight((int) dp(44));
         final String id = t.id;
         x.setOnClickListener(v -> relay.sendTabClose(id));
         pill.addView(x);
@@ -1221,14 +1265,19 @@ public class MainActivity extends Activity
                 for (int i = 0; i < arr.length(); i++) {
                     org.json.JSONObject o = arr.getJSONObject(i);
                     out.add(new String[]{o.optString("name"), o.optString("url"),
-                            o.optString("color", "#8B72F0")});
+                            o.optString("color", DEFAULT_SHORTCUT_COLOR)});
                 }
                 return out;
             } catch (org.json.JSONException e) {
                 Log.w(TAG, "home load: " + e);
             }
         }
-        for (String[] d : HOME_DEFAULTS) out.add(d.clone());
+        String[] brands = getResources().getStringArray(R.array.shortcut_brands);
+        for (int i = 0; i < HOME_DEFAULTS.length; i++) {
+            String[] d = HOME_DEFAULTS[i];
+            out.add(new String[]{d[0], d[1],
+                    i < brands.length ? brands[i] : DEFAULT_SHORTCUT_COLOR});
+        }
         return out;
     }
 
@@ -1567,7 +1616,9 @@ public class MainActivity extends Activity
             android.graphics.drawable.GradientDrawable bg =
                     new android.graphics.drawable.GradientDrawable();
             try {
-                bg.setColor(Color.parseColor(s[2]));
+                bg.setColor(s[2] == null || s[2].isEmpty()
+                        ? getColor(R.color.relay_accent)
+                        : android.graphics.Color.parseColor(s[2]));
             } catch (Exception e) {
                 bg.setColor(getColor(R.color.relay_accent));
             }
@@ -1742,7 +1793,7 @@ public class MainActivity extends Activity
                         return;
                     }
                     java.util.List<String[]> l = loadHome();
-                    l.add(new String[]{name, url, "#8B72F0"});
+                    l.add(new String[]{name, url, DEFAULT_SHORTCUT_COLOR});
                     saveHome(l);
                     renderHome();
                     Toast.makeText(this, "Shortcut saved", Toast.LENGTH_SHORT).show();
@@ -1785,13 +1836,9 @@ public class MainActivity extends Activity
             item.setGravity(Gravity.CENTER_HORIZONTAL);
             item.setPadding(0, (int) dp(6), 0, (int) dp(6));
 
-            // Icon container: 48dp, #2a2a2a, 12dp radius (mockup).
+            // Icon container: 48dp, the raised panel, 12dp radius.
             FrameLayout iconBox = new FrameLayout(this);
-            android.graphics.drawable.GradientDrawable ibg =
-                    new android.graphics.drawable.GradientDrawable();
-            ibg.setColor(0xFF2A2A2A);
-            ibg.setCornerRadius(dp(12));
-            iconBox.setBackground(ibg);
+            iconBox.setBackgroundResource(R.drawable.tool_tile_bg);
             int boxSize = (int) dp(48);
             iconBox.setLayoutParams(new LinearLayout.LayoutParams(boxSize, boxSize));
 
@@ -1807,8 +1854,8 @@ public class MainActivity extends Activity
 
             TextView label = new TextView(this);
             label.setText(TOOL_LABELS[i]);
-            label.setTextColor(0xFF9A9A9A);
-            label.setTextSize(10);
+            label.setTextColor(getColor(R.color.relay_muted));
+            label.setTextSize(11);
             label.setPadding(0, (int) dp(6), 0, 0);
             label.setGravity(Gravity.CENTER);
             item.addView(label);
@@ -1870,8 +1917,11 @@ public class MainActivity extends Activity
     private void updateDesktopTool() {
         ImageView icon = toolIcons.get("desktop");
         if (icon != null) {
-            if (mobile) icon.setColorFilter(0xFF8B72F0);
-            else icon.clearColorFilter();
+            if (mobile) {
+                icon.setColorFilter(getColor(R.color.relay_accent));
+            } else {
+                icon.clearColorFilter();
+            }
         }
     }
 

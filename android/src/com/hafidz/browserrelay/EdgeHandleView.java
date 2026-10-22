@@ -29,11 +29,22 @@ public class EdgeHandleView extends View {
     private final Paint icon = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final RectF rect = new RectF();
+    /** The colours come from the palette (colors.xml), like the rest. */
+    private final int accent;
+    private final int panel;
+    private final int field;
+    private final int border;
+    private final int text;
 
     public EdgeHandleView(Context ctx, AttributeSet attrs) {
         super(ctx, attrs);
+        accent = ctx.getColor(R.color.relay_accent);
+        panel = ctx.getColor(R.color.relay_panel);
+        field = ctx.getColor(R.color.relay_field);
+        border = ctx.getColor(R.color.relay_border);
+        text = ctx.getColor(R.color.relay_text);
         edge.setStyle(Paint.Style.STROKE);
-        edge.setColor(0x24FFFFFF);
+        edge.setColor(border);
         edge.setStrokeWidth(dp(1));
         icon.setStyle(Paint.Style.STROKE);
         icon.setStrokeCap(Paint.Cap.ROUND);
@@ -78,8 +89,10 @@ public class EdgeHandleView extends View {
         if (state == State.DOCKED && !dragging) {
             // Thin pill flush against the edge; only the inner side
             // is rounded (draw a full round rect, then square off the
-            // edge side with a plain rect).
-            fill.setColor(0x8C181818);
+            // edge side with a plain rect). The hairline keeps it
+            // visible against the dark picture (the web client does
+            // the same with a 10% white border).
+            fill.setColor(panel);
             float r = h / 2f;
             rect.set(0, 0, w, h);
             c.drawRoundRect(rect, r, r, fill);
@@ -88,7 +101,11 @@ public class EdgeHandleView extends View {
             } else {
                 c.drawRect(0, 0, w / 2f, h, fill);
             }
-            icon.setColor(0xFF8B72F0);
+            edge.setColor(border);
+            edge.setStrokeWidth(dp(1));
+            rect.set(0.5f, 0.5f, w - 0.5f, h - 0.5f);
+            c.drawRoundRect(rect, r, r, edge);
+            icon.setColor(accent);
             icon.setStrokeWidth(dp(2.6f));
             float s = dp(6.5f);
             path.reset();
@@ -107,10 +124,10 @@ public class EdgeHandleView extends View {
         }
 
         if (state == State.OPEN) {
-            fill.setColor(0xEB8B72F0);
+            fill.setColor(accent);
             c.drawCircle(cx, cy, Math.min(w, h) / 2f, fill);
             // white x
-            icon.setColor(0xFFFFFFFF);
+            icon.setColor(text);
             icon.setStrokeWidth(dp(2.2f));
             float s = dp(8f);
             c.drawLine(cx - s, cy - s, cx + s, cy + s, icon);
@@ -119,11 +136,11 @@ public class EdgeHandleView extends View {
         }
 
         // ROUND (or dragging): dark circle with the 2x2 grid glyph.
-        fill.setColor(0xEB181818);
+        fill.setColor(field);
         float rad = Math.min(w, h) / 2f;
         c.drawCircle(cx, cy, rad, fill);
         c.drawCircle(cx, cy, rad - dp(0.5f), edge);
-        icon.setColor(0xFF8B72F0);
+        icon.setColor(accent);
         icon.setStrokeWidth(dp(2f));
         float g = dp(7.5f);
         float gap = dp(3.2f);
