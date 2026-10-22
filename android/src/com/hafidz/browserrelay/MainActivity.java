@@ -413,6 +413,10 @@ public class MainActivity extends Activity
         } else if (remoteOpen) {
             // The back button brings the beranda back.
             closeRemote();
+        } else if (connectCardShown && !pairingRequired) {
+            // The card was opened on purpose: the beranda is behind it.
+            connectCardShown = false;
+            updateState();
         } else {
             super.onBackPressed();
         }
@@ -768,9 +772,6 @@ public class MainActivity extends Activity
         // came up is "not connected": the user gets the card with the
         // reason on it.
         lost = hadSession;
-        // A lost session brings the remote view forward: the lost
-        // banner lives there.
-        if (lost) remoteOpen = true;
         runOnUiThread(() -> {
             latencyText.setText("— ms");
             statusDot.setBackgroundTintList(
@@ -1244,6 +1245,13 @@ public class MainActivity extends Activity
             updateConnectError();
             userReconnect();
         });
+        // The address is tappable: the card opens to fix it.
+        if (berandaAddress != null) {
+            berandaAddress.setOnClickListener(v -> {
+                connectCardShown = true;
+                updateState();
+            });
+        }
 
         // The edit button switches the shortcut grid to its edit mode.
         ImageButton editBtn = findViewById(R.id.berandaEdit);
@@ -1400,7 +1408,9 @@ public class MainActivity extends Activity
      */
     private void openRemote() {
         if (!connected) {
-            // Nothing to drive yet: the connect card says why.
+            // Nothing to drive yet: the card says why, and the user
+            // can fix the address there.
+            connectCardShown = true;
             updateState();
             return;
         }
