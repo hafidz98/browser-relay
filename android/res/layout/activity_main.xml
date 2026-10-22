@@ -212,6 +212,12 @@
         </FrameLayout>
     </LinearLayout>
 
+    <!-- ===================== THE BERANDA (the home screen) =====================
+         A layer above the remote screen: it is the default screen of
+         the phone, and the remote view is what the user opens from it.
+         The connect card sits above it (the device is not paired yet). -->
+    <include layout="@layout/beranda" />
+
     <!-- ===================== NOT CONNECTED: the connect card =====================
          The one card the user sees before there is a connection: the PC
          address, the pairing code, one Connect button, and the line under

@@ -93,6 +93,7 @@ public class MainActivity extends Activity
     private EditText codeInput;
     private View connectBtn;
     private TextView connectError;
+    private TextView connectHint;
     /** Connected: the slim bar with the state and the round-trip time. */
     private View statusBar;
     private TextView statusText;
@@ -156,40 +157,6 @@ public class MainActivity extends Activity
     private java.util.List<RelayClient.TabInfo> openTabs =
             new java.util.ArrayList<>();
 
-    /** Section label: small caps, muted, letter-spaced. */
-    private TextView makeSectionLabel(String text) {
-        TextView tv = new TextView(this);
-        tv.setText(text);
-        tv.setTextSize(11);
-        tv.setTextColor(getColor(R.color.relay_muted));
-        tv.setTypeface(null, android.graphics.Typeface.BOLD);
-        tv.setLetterSpacing(0.08f);
-        return tv;
-    }
-
-    /** Card background: dark, rounded, subtle border. */
-    private android.graphics.drawable.GradientDrawable makeCardBg(int borderColor) {
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setColor(getColor(R.color.relay_panel));
-        bg.setCornerRadius(dp(14));
-        bg.setStroke((int) dp(1), borderColor);
-        return bg;
-    }
-
-    /** Status dot view. */
-    private View makeDot(int color, int sizeDp) {
-        View dot = new View(this);
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        bg.setColor(color);
-        dot.setBackground(bg);
-        int s = (int) dp(sizeDp);
-        dot.setLayoutParams(new LinearLayout.LayoutParams(s, s));
-        return dot;
-    }
-
     // ---- the beranda (the home screen) ----
     /** The beranda layer: the home screen with the state and the tools. */
     private View berandaView;
@@ -208,14 +175,14 @@ public class MainActivity extends Activity
     private boolean remoteOpen = false;
     /**
      * The relay does not know this device (or the code was refused):
-     * the connect card is the screen until the pairing worked.
+     * the pairing code is needed before the connect card can go away.
      */
     private boolean pairingRequired = false;
     /**
-     * The user opened the connect card on purpose (to fix the
-     * address). It closes again when the pairing worked.
+     * The connect card is the screen: the device is not paired yet, or
+     * the user asked for the card to fix the address.
      */
-    private boolean connectCardOpen = false;
+    private boolean connectCardShown = false;
     /** The name of the PC we drive (the relay sends it with the welcome). */
     private String peerHost = "";
 
@@ -235,175 +202,6 @@ public class MainActivity extends Activity
             {"GitHub", "github.com", "#24292F"},
             {"Wikipedia", "wikipedia.org", "#636363"},
     };
-
-    // The tools of the beranda: icon, label, action. The first tile
-    // opens the remote view - that is the way into the browser.
-    private static final String[] BERANDA_TOOL_LABELS = {
-            "Remote", "Back", "Forward", "Reload",
-            "Home", "Find", "Keyboard", "Paste",
-            "Copy link", "Zoom", "Settings", "Disconnect"
-    };
-    private static final int[] BERANDA_TOOL_ICONS = {
-            R.drawable.ic_desktop, R.drawable.ic_back, R.drawable.ic_forward,
-            R.drawable.ic_reload, R.drawable.ic_home, R.drawable.ic_find,
-            R.drawable.ic_keyboard, R.drawable.ic_paste, R.drawable.ic_link,
-            R.drawable.ic_zoom, R.drawable.ic_settings, R.drawable.ic_link_off
-    };
-    private static final String[] BERANDA_TOOL_ACTIONS = {
-            "remote", "back", "forward", "reload",
-            "home", "find", "keyboard", "paste",
-            "copylink", "zoom", "settings", "disconnect"
-    };
-
-    /** The status row at the top of the beranda. */
-    private void buildBerandaStatus(LinearLayout col) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding((int) dp(14), (int) dp(12), (int) dp(14), (int) dp(12));
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setColor(getColor(R.color.relay_panel));
-        bg.setCornerRadius(dp(14));
-        bg.setStroke((int) dp(1), getColor(R.color.relay_border));
-        card.setBackground(bg);
-
-        berandaDot = makeDot(getColor(R.color.relay_faint), 8);
-        card.addView(berandaDot);
-
-        LinearLayout texts = new LinearLayout(this);
-        texts.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        tlp.setMarginStart((int) dp(10));
-        texts.setLayoutParams(tlp);
-
-        berandaState = new TextView(this);
-        berandaState.setText("Not connected");
-        berandaState.setTextSize(14);
-        berandaState.setTextColor(getColor(R.color.relay_text));
-        berandaState.setSingleLine(true);
-        berandaState.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        texts.addView(berandaState);
-
-        berandaDevice = new TextView(this);
-        berandaDevice.setText(deviceName());
-        berandaDevice.setTextSize(11.5f);
-        berandaDevice.setTextColor(getColor(R.color.relay_muted));
-        berandaDevice.setSingleLine(true);
-        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dlp.topMargin = (int) dp(2);
-        berandaDevice.setLayoutParams(dlp);
-        texts.addView(berandaDevice);
-
-        card.addView(texts);
-
-        berandaLatency = new TextView(this);
-        berandaLatency.setText("— ms");
-        berandaLatency.setTextSize(12);
-        berandaLatency.setTextColor(getColor(R.color.relay_faint));
-        card.addView(berandaLatency);
-
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        col.addView(card, clp);
-    }
-
-    /** The tile that opens the remote view (the beranda's main action). */
-    private View buildRemoteTile() {
-        TextView tile = new TextView(this);
-        tile.setText("Open the remote view");
-        tile.setTextSize(14);
-        tile.setTextColor(getColor(R.color.relay_text));
-        tile.setGravity(Gravity.CENTER);
-        tile.setPadding((int) dp(14), (int) dp(16), (int) dp(14), (int) dp(16));
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setColor(getColor(R.color.relay_accent));
-        bg.setCornerRadius(dp(12));
-        tile.setBackground(bg);
-        tile.setOnClickListener(v -> openRemote());
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins((int) dp(16), (int) dp(12), (int) dp(16), (int) dp(4));
-        tile.setLayoutParams(lp);
-        return tile;
-    }
-
-    /** One line of the connection info: a muted key and its value. */
-    private void addInfoRow(LinearLayout card, String key, TextView value) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, (int) dp(6), 0, (int) dp(6));
-        TextView k = new TextView(this);
-        k.setText(key);
-        k.setTextSize(12);
-        k.setTextColor(getColor(R.color.relay_faint));
-        row.addView(k, new LinearLayout.LayoutParams(
-                (int) dp(76), ViewGroup.LayoutParams.WRAP_CONTENT));
-        value.setTextSize(13);
-        value.setTextColor(getColor(R.color.relay_text));
-        value.setSingleLine(true);
-        value.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        row.addView(value, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        card.addView(row);
-    }
-
-    /** A small pill button (the web client's accent pill). */
-    private View makePillButton(String label, int accent, View.OnClickListener onClick) {
-        TextView btn = new TextView(this);
-        btn.setText(label);
-        btn.setTextSize(13);
-        btn.setTextColor(accent);
-        btn.setGravity(Gravity.CENTER);
-        btn.setPadding((int) dp(14), (int) dp(11), (int) dp(14), (int) dp(11));
-        android.graphics.drawable.GradientDrawable bg =
-                new android.graphics.drawable.GradientDrawable();
-        bg.setColor(getColor(R.color.relay_field));
-        bg.setCornerRadius(dp(999));
-        bg.setStroke((int) dp(1), accent);
-        btn.setBackground(bg);
-        btn.setOnClickListener(onClick);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = (int) dp(6);
-        btn.setLayoutParams(lp);
-        return btn;
-    }
-
-    /** One tool tile of the beranda: a 56dp icon with a label under it. */
-    private View makeToolTile(int iconRes, String label, String action) {
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.VERTICAL);
-        tile.setGravity(Gravity.CENTER_HORIZONTAL);
-        FrameLayout box = new FrameLayout(this);
-        box.setBackgroundResource(R.drawable.tool_tile_bg);
-        int size = (int) dp(56);
-        box.setLayoutParams(new LinearLayout.LayoutParams(size, size));
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(iconRes);
-        icon.setLayoutParams(new FrameLayout.LayoutParams(
-                (int) dp(26), (int) dp(26), Gravity.CENTER));
-        box.addView(icon);
-        tile.addView(box);
-        TextView name = new TextView(this);
-        name.setText(label);
-        name.setTextSize(11);
-        name.setTextColor(getColor(R.color.relay_muted));
-        name.setGravity(Gravity.CENTER);
-        name.setSingleLine(true);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams nameLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        nameLp.topMargin = (int) dp(6);
-        name.setLayoutParams(nameLp);
-        tile.addView(name);
-        tile.setOnClickListener(v -> onBerandaTool(action));
-        return tile;
-    }
 
     /** What a tool tile of the beranda does. */
     private void onBerandaTool(String action) {
@@ -479,7 +277,8 @@ public class MainActivity extends Activity
         lastConnError = "";
         updateConnectError();
         closeSheet();
-        pairingRequired = true;
+        // The session is over: the connect card is the screen again.
+        connectCardShown = true;
         updateState();
     }
 
@@ -513,6 +312,7 @@ public class MainActivity extends Activity
         codeInput = findViewById(R.id.codeInput);
         connectBtn = findViewById(R.id.connectBtn);
         connectError = findViewById(R.id.connectError);
+        connectHint = findViewById(R.id.connectHint);
         statusBar = findViewById(R.id.statusBar);
         statusText = findViewById(R.id.statusText);
         statusDot = findViewById(R.id.statusDot);
@@ -553,6 +353,7 @@ public class MainActivity extends Activity
         // over when this device is not paired yet.
         if (prefs.getString("br_host", null) == null) {
             pairingRequired = true;
+            connectCardShown = true;
         }
         showConnectState();
     }
@@ -644,6 +445,7 @@ public class MainActivity extends Activity
         if (hostPort == null) {
             // No saved host: show the connect card and wait for the user.
             pairingRequired = true;
+            connectCardShown = true;
             showConnectState();
             return;
         }
@@ -655,6 +457,7 @@ public class MainActivity extends Activity
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
             updateConnectError();
             pairingRequired = true;
+            connectCardShown = true;
             showConnectState();
             return;
         }
@@ -690,7 +493,7 @@ public class MainActivity extends Activity
         // The pairing worked: the beranda is the screen now.
         boolean wasPairing = pairingRequired;
         pairingRequired = false;
-        connectCardOpen = false;
+        connectCardShown = false;
         // The pairing lands on the beranda, not on the remote view.
         // A later reconnect keeps the screen the user was on.
         if (wasPairing) remoteOpen = false;
@@ -1356,149 +1159,56 @@ public class MainActivity extends Activity
      * The beranda is the home screen of the phone: the state of the
      * connection, the tools and the shortcuts. The remote view is one
      * tap away (the "Remote" tile).
+     *
+     * <p>The layout lives in res/layout/beranda.xml; this only wires
+     * the tiles to their actions.
      */
     private void setupHome() {
-        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
-        scroll.setBackgroundColor(getColor(R.color.relay_bg));
-        scroll.setVisibility(View.GONE);
-        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        scroll.setLayoutParams(slp);
+        berandaView = findViewById(R.id.berandaView);
+        berandaState = findViewById(R.id.berandaState);
+        berandaLatency = findViewById(R.id.berandaLatency);
+        berandaDevice = findViewById(R.id.berandaDevice);
+        berandaDot = findViewById(R.id.berandaDot);
+        berandaPcName = findViewById(R.id.berandaPcName);
+        berandaAddress = findViewById(R.id.berandaAddress);
+        berandaRole = findViewById(R.id.berandaRole);
+        berandaError = findViewById(R.id.berandaError);
+        berandaTakeover = findViewById(R.id.berandaTakeover);
+        berandaReconnect = findViewById(R.id.berandaReconnect);
+        shortcutGrid = findViewById(R.id.shortcutGrid);
 
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        scroll.addView(col, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        int hp = (int) dp(16);
-
-        // ---- the header (the web client's home header) ----
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(hp, (int) dp(14), hp, (int) dp(12));
-        LinearLayout titles = new LinearLayout(this);
-        titles.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        titles.setLayoutParams(tlp);
-        TextView h1 = new TextView(this);
-        h1.setText("Home");
-        h1.setTextSize(20);
-        h1.setTextColor(getColor(R.color.relay_text));
-        h1.setTypeface(null, android.graphics.Typeface.BOLD);
-        titles.addView(h1);
-        TextView h2 = new TextView(this);
-        h2.setText("Tools and the PC connection");
-        h2.setTextSize(12);
-        h2.setTextColor(getColor(R.color.relay_muted));
-        titles.addView(h2);
-        header.addView(titles);
-        col.addView(header);
-
-        // ---- the state of the connection ----
-        buildBerandaStatus(col);
-
-        // ---- the tools ----
-        col.addView(makeSectionLabel("TOOLS"));
-        GridLayout tools = new GridLayout(this);
-        tools.setColumnCount(4);
-        for (int i = 0; i < BERANDA_TOOL_ACTIONS.length; i++) {
-            View tile = makeToolTile(BERANDA_TOOL_ICONS[i], BERANDA_TOOL_LABELS[i],
-                    BERANDA_TOOL_ACTIONS[i]);
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams(
-                    GridLayout.spec(i / 4), GridLayout.spec(i % 4, 1f));
-            lp.width = 0;
-            lp.setMargins((int) dp(3), (int) dp(3), (int) dp(3), (int) dp(3));
-            tile.setLayoutParams(lp);
-            tools.addView(tile);
+        // Every tool tile carries its action in the tag, so the layout
+        // and the code cannot drift apart.
+        GridLayout tools = findViewById(R.id.berandaTools);
+        for (int i = 0; i < tools.getChildCount(); i++) {
+            View tile = tools.getChildAt(i);
+            Object tag = tile.getTag();
+            if (!(tag instanceof String)) continue;
+            final String action = (String) tag;
+            tile.setOnClickListener(v -> onBerandaTool(action));
         }
-        LinearLayout.LayoutParams toolsLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        toolsLp.setMargins(hp, (int) dp(8), hp, (int) dp(16));
-        tools.setLayoutParams(toolsLp);
-        col.addView(tools);
-
-        // ---- the connection info ----
-        col.addView(makeSectionLabel("CONNECTION"));
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding((int) dp(14), (int) dp(6), (int) dp(14), (int) dp(6));
-        card.setBackground(makeCardBg(getColor(R.color.relay_border)));
-        berandaPcName = new TextView(this);
-        berandaAddress = new TextView(this);
-        berandaRole = new TextView(this);
-        addInfoRow(card, "PC", berandaPcName);
-        addInfoRow(card, "Address", berandaAddress);
-        addInfoRow(card, "Role", berandaRole);
-        berandaError = new TextView(this);
-        berandaError.setTextSize(12);
-        berandaError.setTextColor(getColor(R.color.relay_red));
-        berandaError.setVisibility(View.GONE);
-        LinearLayout.LayoutParams errLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        errLp.topMargin = (int) dp(6);
-        berandaError.setLayoutParams(errLp);
-        card.addView(berandaError);
 
         // Take over (when we only watch) and Reconnect (when the link
-        // died) sit at the bottom of the card: one thumb reaches them.
-        berandaTakeover = makePillButton("Take over", getColor(R.color.relay_accent),
-                v -> {
-                    relay.sendTakeover();
-                    Toast.makeText(this, "Taking over the remote view",
-                            Toast.LENGTH_SHORT).show();
-                });
-        berandaReconnect = makePillButton("Reconnect", getColor(R.color.relay_accent),
-                v -> {
-                    lastConnError = "";
-                    updateConnectError();
-                    userReconnect();
-                });
-        card.addView(berandaTakeover);
-        card.addView(berandaReconnect);
-        LinearLayout.LayoutParams cardLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardLp.setMargins(hp, (int) dp(8), hp, (int) dp(20));
-        card.setLayoutParams(cardLp);
-        col.addView(card);
+        // died) sit at the bottom of the connection card.
+        berandaTakeover.setOnClickListener(v -> {
+            relay.sendTakeover();
+            Toast.makeText(this, "Taking over the remote view",
+                    Toast.LENGTH_SHORT).show();
+        });
+        berandaReconnect.setOnClickListener(v -> {
+            lastConnError = "";
+            updateConnectError();
+            userReconnect();
+        });
 
-        // ---- the shortcuts the user saved ----
-        LinearLayout secRow = new LinearLayout(this);
-        secRow.setOrientation(LinearLayout.HORIZONTAL);
-        secRow.setGravity(Gravity.CENTER_VERTICAL);
-        secRow.setPadding(hp, 0, hp, 0);
-        TextView sec = makeSectionLabel("SHORTCUTS");
-        LinearLayout.LayoutParams secLp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        sec.setLayoutParams(secLp);
-        secRow.addView(sec);
-        final android.widget.ImageButton editBtn = new android.widget.ImageButton(this);
-        editBtn.setImageResource(R.drawable.ic_pencil);
-        editBtn.setScaleType(android.widget.ImageView.ScaleType.CENTER_INSIDE);
-        editBtn.setBackground(null);
-        editBtn.setContentDescription("Edit shortcuts");
-        int ebs = (int) dp(44);
-        editBtn.setLayoutParams(new LinearLayout.LayoutParams(ebs, ebs));
+        // The edit button switches the shortcut grid to its edit mode.
+        ImageButton editBtn = findViewById(R.id.berandaEdit);
         editBtn.setOnClickListener(v -> {
             homeEditing = !homeEditing;
             editBtn.setImageResource(homeEditing ? R.drawable.ic_check : R.drawable.ic_pencil);
             renderHome();
         });
-        secRow.addView(editBtn);
-        col.addView(secRow);
 
-        shortcutGrid = new GridLayout(this);
-        shortcutGrid.setColumnCount(4);
-        LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        glp.setMargins(hp, (int) dp(8), hp, (int) dp(24));
-        shortcutGrid.setLayoutParams(glp);
-        col.addView(shortcutGrid);
-
-        berandaView = scroll;
-        // Above the remote screen, below the connect card.
-        root.addView(berandaView, 1);
         renderHome();
     }
 
@@ -1550,7 +1260,7 @@ public class MainActivity extends Activity
                     && connectCard.getVisibility() == View.VISIBLE;
             // The connect card is the screen while the device is not
             // paired, or while the user asked for it.
-            boolean showConnect = pairingRequired || connectCardOpen;
+            boolean showConnect = connectCardShown;
             // The remote view is alive as soon as there is a session.
             boolean showRemote = connected || lost;
 
@@ -1592,7 +1302,9 @@ public class MainActivity extends Activity
                 }
             }
             if (statusDot != null) {
-                int color = connected ? 0xFF3FB950 : 0xFF8A8A8A;
+                int color = connected
+                        ? getColor(R.color.relay_green)
+                        : getColor(R.color.relay_faint);
                 statusDot.setBackgroundTintList(ColorStateList.valueOf(color));
             }
             if (lostText != null) {
@@ -1605,6 +1317,15 @@ public class MainActivity extends Activity
             if (showConnect && serverInput != null
                     && serverInput.getText().length() == 0) {
                 serverInput.setText(prefs.getString("br_host", ""));
+            }
+            // A paired phone only needs the address; a new one also
+            // needs the code from the PC panel.
+            if (connectHint != null) {
+                connectHint.setText(pairingRequired
+                        ? "Open the panel on the laptop for the address "
+                          + "and the 6 digit code."
+                        : "This phone is already paired - only the address "
+                          + "is needed.");
             }
             // Dim shortcuts when there is no session to drive.
             if (shortcutGrid != null) {
@@ -1687,8 +1408,8 @@ public class MainActivity extends Activity
             berandaDot.setBackgroundTintList(ColorStateList.valueOf(color));
         }
         if (berandaDevice != null) {
-            // The name of the PC we drive, and this phone below it.
-            berandaDevice.setText(peerHost.isEmpty() ? deviceName() : peerHost);
+            // The name of this phone (the relay knows us by it).
+            berandaDevice.setText(deviceName());
         }
         if (berandaPcName != null) {
             berandaPcName.setText(peerHost.isEmpty() ? "—" : peerHost);
@@ -1739,16 +1460,19 @@ public class MainActivity extends Activity
             lastConnErrorKind = WsClient.Failure.NOT_PAIRED;
             // The device is not paired: the connect card is the screen.
             pairingRequired = true;
+            connectCardShown = true;
         } else if (m.contains("bad token") || m.contains("invalid token")
                 || m.contains("expired")) {
             lastConnError = "that code was refused - enter the current "
                     + "6 digit code from the PC panel";
             lastConnErrorKind = WsClient.Failure.BAD_CODE;
             pairingRequired = true;
+            connectCardShown = true;
         } else {
             lastConnError = msg == null ? "the relay refused the connection" : msg;
             lastConnErrorKind = WsClient.Failure.UNKNOWN;
             pairingRequired = true;
+            connectCardShown = true;
         }
         updateConnectError();
     }
@@ -1764,14 +1488,29 @@ public class MainActivity extends Activity
             updateConnectError();
             return;
         }
-        if (!code.matches("\\d{6}")) {
+        if (!code.isEmpty() && !code.matches("\\d{6}")) {
             lastConnError = "the pairing code is 6 digits - read it from the PC panel";
             lastConnErrorKind = WsClient.Failure.BAD_CODE;
             updateConnectError();
             return;
         }
-        prefs.edit().putString("br_host", addr.display())
-                .putString("br_token", code).apply();
+        if (code.isEmpty() && pairingRequired) {
+            // The relay does not know this device: a code is needed.
+            lastConnError = "this phone is not paired yet - enter the "
+                    + "6 digit code from the PC panel";
+            lastConnErrorKind = WsClient.Failure.NOT_PAIRED;
+            updateConnectError();
+            return;
+        }
+        // An empty code means: this device is already paired, the
+        // fingerprint is the credential.
+        if (code.isEmpty()) {
+            prefs.edit().putString("br_host", addr.display())
+                    .remove("br_token").apply();
+        } else {
+            prefs.edit().putString("br_host", addr.display())
+                    .putString("br_token", code).apply();
+        }
         lastConnError = "";
         updateConnectError();
         connect();

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The shared text styles of the Android client (the web client's
+     type scale: small muted section labels, readable tile labels). -->
+<resources>
+
+    <!-- A section label: small, muted, letter-spaced. -->
+    <style name="SectionLabel">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/relay_muted</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+
+    <!-- The label under a tile: readable, muted. -->
+    <style name="TileLabel">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/relay_muted</item>
+        <item name="android:gravity">center</item>
+        <item name="android:layout_marginTop">6dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- The key of a line in the connection info. -->
+    <style name="InfoKey">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/relay_faint</item>
+    </style>
+
+    <!-- The value of a line in the connection info. -->
+    <style name="InfoValue">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/relay_text</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+
+    <!-- A small accent pill (the web client's accent button). -->
+    <style name="PillButton">
+        <item name="android:background">@drawable/accent_pill_bg</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/relay_accent</item>
+        <item name="android:gravity">center</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+</resources>
