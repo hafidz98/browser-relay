@@ -363,6 +363,9 @@ impl Hub {
     /// close — the client needs the connection alive to request
     /// a pairing code.
     fn send_auth_error(&self, id: u64, msg: &str) {
+        // Log it: a refused client sees the socket close and nothing
+        // else, so without this the reason never shows up anywhere.
+        rlog!("client #{id} refused: {msg}");
         let st = self.state.lock().unwrap();
         if let Some(c) = st.clients.get(&id) {
             // Counted sends: the writer pump decrements `queued` for
@@ -551,6 +554,12 @@ impl Hub {
                 st.driver == Some(id)
             };
             rlog!("client #{id} authed (driver={is_driver})");
+            rlog!(
+                "client #{id} sent: name={:?} fingerprint={} token={}",
+                m.name,
+                if m.fingerprint.is_empty() { "-" } else { &m.fingerprint[..m.fingerprint.len().min(8)] },
+                if m.token.is_empty() { "-" } else { "yes" }
+            );
             let mobile = self.browser().map(|b| b.is_mobile()).unwrap_or(false);
             self.send_json(id, json!({
                 "type": "welcome", "driver": is_driver, "mobile": mobile,
