@@ -388,12 +388,18 @@ impl Hub {
         }
     }
 
-    /// Peer IP without the port (for pairing-request rate limiting).
+    /// Peer address of a connection (the bare IP — `peer` is stored
+    /// without the port). Used as the key of the per-address pairing
+    /// rate limits.
+    ///
+    /// NOTE: the address is used as-is. Splitting it on ':' would cut
+    /// an IPv6 address down to its first group and put every IPv6
+    /// client in one bucket.
     fn client_ip(&self, id: u64) -> String {
         let st = self.state.lock().unwrap();
         st.clients
             .get(&id)
-            .map(|c| c.peer.split(':').next().unwrap_or("").to_string())
+            .map(|c| c.peer.clone())
             .unwrap_or_default()
     }
 
@@ -519,7 +525,8 @@ impl Hub {
             // fingerprint-only reconnect for an already-paired device.
             let fp = m.fingerprint.clone();
             let auth_ok = if !m.token.is_empty() {
-                match self.pairing.try_pair(&m.token, &fp, &m.name) {
+                let ip = self.client_ip(id);
+                match self.pairing.try_pair(&m.token, &fp, &m.name, &ip) {
                     Ok(()) => true,
                     Err(e) => {
                         self.send_auth_error(id, e);

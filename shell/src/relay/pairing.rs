@@ -8,6 +8,9 @@
 //!   capped: after MAX_WRONG_ATTEMPTS wrong guesses the code is invalidated
 //!   and a fresh one is generated, so one code never takes more hits than
 //!   that. The panel log says when that happens.
+//! - On top of that one address may only try MAX_ATTEMPTS_PER_IP codes
+//!   per ATTEMPT_WINDOW_SECS, so the whole 900k space cannot be swept
+//!   in one TTL window either.
 //! - Each device has a stable fingerprint (client-generated UUID). Pairing
 //!   creates a contract: fingerprint -> {name, paired_at, last_seen},
 //! persisted to paired.json. Reconnects present only the fingerprint.
@@ -36,6 +39,17 @@ const REQUEST_COOLDOWN_SECS: u64 = 10;
 /// this many burns the code: it is invalidated and a new one is
 /// generated, so the code on the panel never takes more hits than this.
 const MAX_WRONG_ATTEMPTS: u32 = 5;
+
+/// Pairing attempts allowed per address inside ATTEMPT_WINDOW_SECS.
+/// One IP can only try so many codes a minute; the guess cap above
+/// limits a single code, this one limits the whole sweep.
+const MAX_ATTEMPTS_PER_IP: usize = 10;
+
+/// Length of the per-address attempt window (seconds).
+const ATTEMPT_WINDOW_SECS: u64 = 60;
+
+/// Reason sent to a client that hit the per-address limit.
+const TOO_MANY_ATTEMPTS: &str = "too many attempts";
 
 fn gen_code() -> String {
     format!("{}", rand::rng().random_range(100_000..=999_999))
@@ -71,6 +85,28 @@ fn rotate_code(inner: &mut Inner) {
     inner.wrong_attempts = 0;
 }
 
+/// Take one attempt slot for `ip`. False when that address is already
+/// over MAX_ATTEMPTS_PER_IP inside the window.
+///
+/// The window slides: the timestamps of the recent attempts are kept
+/// per address, and the ones that fell out of the window are dropped
+/// on every call — together with the addresses that have nothing left.
+/// So the map holds only the addresses that are actually active right
+/// now and cannot grow without bound.
+fn take_attempt(inner: &mut Inner, ip: &str, now: u64) -> bool {
+    let cutoff = now.saturating_sub(ATTEMPT_WINDOW_SECS);
+    inner.attempts.retain(|_, ts| {
+        ts.retain(|t| *t > cutoff);
+        !ts.is_empty()
+    });
+    let ts = inner.attempts.entry(ip.to_string()).or_default();
+    if ts.len() >= MAX_ATTEMPTS_PER_IP {
+        return false;
+    }
+    ts.push(now);
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PairedDevice {
     pub name: String,
@@ -101,6 +137,10 @@ struct Inner {
     pending: Option<PairRequest>,
     /// Last request time per IP, for rate limiting.
     last_request: HashMap<String, u64>,
+    /// Recent pairing attempts per IP (unix seconds), for the
+    /// per-address throttle. Pruned on use, so it cannot grow
+    /// without bound.
+    attempts: HashMap<String, Vec<u64>>,
     /// Wrong guesses against the current pairing code. At
     /// MAX_WRONG_ATTEMPTS the code is invalidated and a fresh one is
     /// generated, so a single code never takes more hits than that.
@@ -130,6 +170,7 @@ impl PairingManager {
                 devices,
                 pending: None,
                 last_request: HashMap::new(),
+                attempts: HashMap::new(),
                 wrong_attempts: 0,
             }),
             file,
@@ -199,10 +240,15 @@ impl PairingManager {
             }
         }
         if let Some(last) = inner.last_request.get(ip) {
-            if now - last < REQUEST_COOLDOWN_SECS {
+            if now.saturating_sub(*last) < REQUEST_COOLDOWN_SECS {
                 return Err("too many requests");
             }
         }
+        // Drop the cooldowns that expired: the map is keyed by
+        // client-supplied address, so it must not grow without bound.
+        inner
+            .last_request
+            .retain(|_, t| now.saturating_sub(*t) < REQUEST_COOLDOWN_SECS);
         inner.last_request.insert(ip.to_string(), now);
         let code = gen_code();
         inner.pending = Some(PairRequest {
@@ -247,7 +293,8 @@ impl PairingManager {
     /// A 6-digit code is only 900k values, so guessing it is capped:
     /// after MAX_WRONG_ATTEMPTS wrong guesses the code is invalidated
     /// and a fresh one is generated, so one code never takes more hits
-    /// than that.
+    /// than that. On top of that one address gets at most
+    /// MAX_ATTEMPTS_PER_IP attempts per ATTEMPT_WINDOW_SECS.
     ///
     /// A device that is already paired keeps working: from then on its
     /// fingerprint is the credential, so a stale token neither counts
@@ -257,8 +304,9 @@ impl PairingManager {
         code: &str,
         fingerprint: &str,
         name: &str,
+        ip: &str,
     ) -> Result<(), &'static str> {
-        self.try_pair_at(code, fingerprint, name, now_unix())
+        self.try_pair_at(code, fingerprint, name, ip, now_unix())
     }
 
     /// try_pair with an explicit clock: the windows are time-based, so
@@ -268,6 +316,7 @@ impl PairingManager {
         code: &str,
         fingerprint: &str,
         name: &str,
+        ip: &str,
         now: u64,
     ) -> Result<(), &'static str> {
         if fingerprint.is_empty() {
@@ -286,33 +335,44 @@ impl PairingManager {
             }
         }
         // A paired device is trusted: from then on its fingerprint is
-        // the credential, so a stale token is not a guess — it must not
-        // count against the cap and must not burn the code the panel
-        // shows either.
+        // the credential, so a stale token is not a guess — it must
+        // not count against the cap, must not burn the code the panel
+        // shows, and must not spend the per-address budget.
         let paired = inner.devices.contains_key(fingerprint);
-        if !matched && !paired {
-            // Wrong guess: it counts against the current code.
-            inner.wrong_attempts += 1;
-            let attempts = inner.wrong_attempts;
-            if attempts >= MAX_WRONG_ATTEMPTS {
-                if self.fixed_code.is_some() {
-                    // The --token test override is pinned, so it cannot
-                    // be invalidated - only the counter moves.
-                    rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS}) [fixed code]");
-                } else {
-                    // Too many hits on this code: invalidate it and put
-                    // a fresh one on the panel. The attacker gets
-                    // MAX_WRONG_ATTEMPTS tries per code, not endless ones.
-                    rlog!("pairing code burned after {attempts} wrong attempts");
-                }
-                self.burn_codes(&mut inner);
-            } else {
-                rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS})");
+        if !paired {
+            // Per-address throttle: at most MAX_ATTEMPTS_PER_IP
+            // attempts per ATTEMPT_WINDOW_SECS. The per-code cap
+            // below limits one code, this one limits the sweep over
+            // all of them.
+            if !take_attempt(&mut inner, ip, now) {
+                rlog!("pairing refused for {ip}: too many attempts");
+                return Err(TOO_MANY_ATTEMPTS);
             }
-            return Err("bad token");
+            if !matched {
+                // Wrong guess: it counts against the current code.
+                inner.wrong_attempts += 1;
+                let attempts = inner.wrong_attempts;
+                if attempts >= MAX_WRONG_ATTEMPTS {
+                    if self.fixed_code.is_some() {
+                        // The --token test override is pinned, so it
+                        // cannot be invalidated - only the counter moves.
+                        rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS}) [fixed code]");
+                    } else {
+                        // Too many hits on this code: invalidate it and
+                        // put a fresh one on the panel. The attacker
+                        // gets MAX_WRONG_ATTEMPTS tries per code, not
+                        // endless ones.
+                        rlog!("pairing code burned after {attempts} wrong attempts");
+                    }
+                    self.burn_codes(&mut inner);
+                } else {
+                    rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS})");
+                }
+                return Err("bad token");
+            }
         }
-        // Burn: single-use (unless a fixed test code). Fresh panel code;
-        // clear the pending request.
+        // Burn: single-use (unless a fixed test code). Fresh panel
+        // code; clear the pending request.
         if matched {
             self.burn_codes(&mut inner);
             inner.pending = None;
