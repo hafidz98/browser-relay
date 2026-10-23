@@ -20,7 +20,7 @@ use tray_icon::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 use relay::{CoreState, RelayHandle, RelayOpts};
 
-pub const VERSION: &str = "0.9.67";
+pub const VERSION: &str = "0.9.68";
 const ICON_RGBA: &[u8] = include_bytes!("../assets/icon.rgba");
 const ICON_SIZE: u32 = 64;
 /// Loopback port used as a single-instance lock (held for lifetime).
@@ -1120,25 +1120,23 @@ impl App {
                 let show_qr = matches!(state, CoreState::Running(_));
                 let qr_w = if show_qr { 42.0 } else { 0.0 };
                 let field_w = (ui.available_width() - qr_w).max(80.0);
-                let field_h = ui
+                let field_rect = ui
                     .allocate_ui(egui::vec2(field_w, 0.0), |ui| {
                         self.copy_field(ui, &spaced, 20.0, true);
                     })
                     .response
-                    .rect
-                    .height();
+                    .rect;
                 if show_qr {
-                    // Align QR button center with the field: allocate the
-                    // button inside a row of field height. The layout must
-                    // be left_to_right(Center) - a justified layout pins
-                    // the child to the top and the button sat too high.
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(42.0, field_h),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            self.ui_qr_button_sized(ui, field_h.min(42.0));
-                        },
+                    // Same top and same height as the field. Nesting it
+                    // in a layout kept landing the button a few pixels
+                    // high (measured 6 px on screen), so it is placed on
+                    // the field's own rect instead of being aligned.
+                    let side = field_rect.height();
+                    let rect = egui::Rect::from_min_size(
+                        egui::pos2(ui.cursor().left(), field_rect.top()),
+                        egui::vec2(side, side),
                     );
+                    self.ui_qr_button_on(ui, rect);
                 }
             });
             // Pending pairing request: the code shown above IS this
@@ -1667,6 +1665,18 @@ impl App {
         let s = size.max(28.0);
         let (rect, resp) =
             ui.allocate_exact_size(egui::vec2(s, s), egui::Sense::click());
+        self.paint_qr_button(ui, rect, &resp);
+    }
+
+    /// The QR button drawn on an exact rect, for a caller that needs it
+    /// on a line of its own choosing (the pairing code row does: the
+    /// button must share the field's top and height).
+    fn ui_qr_button_on(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let resp = ui.allocate_rect(rect, egui::Sense::click());
+        self.paint_qr_button(ui, rect, &resp);
+    }
+
+    fn paint_qr_button(&mut self, ui: &egui::Ui, rect: egui::Rect, resp: &egui::Response) {
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
             if resp.hovered() {
