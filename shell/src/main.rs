@@ -20,7 +20,7 @@ use tray_icon::{TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 use relay::{CoreState, RelayHandle, RelayOpts};
 
-pub const VERSION: &str = "0.9.66";
+pub const VERSION: &str = "0.9.67";
 const ICON_RGBA: &[u8] = include_bytes!("../assets/icon.rgba");
 const ICON_SIZE: u32 = 64;
 /// Loopback port used as a single-instance lock (held for lifetime).
@@ -1129,10 +1129,12 @@ impl App {
                     .height();
                 if show_qr {
                     // Align QR button center with the field: allocate the
-                    // button inside a vertical layout of field height.
+                    // button inside a row of field height. The layout must
+                    // be left_to_right(Center) - a justified layout pins
+                    // the child to the top and the button sat too high.
                     ui.allocate_ui_with_layout(
                         egui::vec2(42.0, field_h),
-                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             self.ui_qr_button_sized(ui, field_h.min(42.0));
                         },
