@@ -108,6 +108,10 @@ public class RelayClient {
     private boolean authed;
     private boolean driver;
     private boolean wantConnect;
+    /** The greeting (auth) frame of the live socket is on the wire. */
+    private boolean authSent;
+    /** The relay said anything at all on the live socket. */
+    private boolean sawReply;
     private int backoffMs = 2000;
     /** How many automatic reconnects happened since the last success. */
     private int autoRetries = 0;
@@ -208,6 +212,8 @@ public class RelayClient {
         if (old != null) old.close();
         authed = false;
         driver = false;
+        authSent = false;
+        sawReply = false;
         main.removeCallbacks(pingTask);
         final WsClient client = new WsClient();
         ws = client;
@@ -232,6 +238,7 @@ public class RelayClient {
                 backoffMs = 2000;
                 lastRxAt = System.currentTimeMillis();
                 sendAuth(socket);
+                authSent = true;
             }
 
             @Override
@@ -245,6 +252,7 @@ public class RelayClient {
             @Override
             public void onMessage(String text) {
                 if (g != gen) return; // a newer socket took over
+                sawReply = true;
                 lastRxAt = System.currentTimeMillis();
                 handle(text);
             }
@@ -252,6 +260,18 @@ public class RelayClient {
             @Override
             public void onClose() {
                 if (g != gen) return; // a newer socket took over
+                // A socket that dies while the relay has not said a word
+                // about our auth is the case that used to look like a
+                // plain "closed": name it, so the reason is on screen
+                // instead of only in the server log.
+                if (authSent && !sawReply) {
+                    Log.w(TAG, "closed before the relay answered the auth");
+                    listener.onConnError(
+                            "the PC closed the connection without answering "
+                                    + "the pairing request - check the address "
+                                    + "and the code on the PC panel",
+                            WsClient.Failure.LOST);
+                }
                 authed = false;
                 main.removeCallbacks(pingTask);
                 if (ws == client) ws = null;
