@@ -58,6 +58,43 @@ The panel shows Chrome's status (green = connected), connected clients,
 and can **hide to the tray** — closing the window (×) hides it too; the
 relay keeps running. Right-click the tray icon to show it again or quit.
 
+## Reaching the relay from outside your home
+
+On your own network the phone talks to the PC's LAN address. Away from
+home that address means nothing, and forwarding a port on the router is
+a bad idea here: most home lines in Indonesia sit behind CGNAT (no
+routable address at all), the transport is a plain `ws://` stream, and
+the pairing code is only six digits.
+
+Use a private mesh instead. [Tailscale](https://tailscale.com) is free
+for personal use and needs no router change, no domain and no open port:
+
+1. Sign up at tailscale.com with a Gmail/GitHub/Apple account. A tailnet
+   created with a custom domain counts as business use.
+2. Install Tailscale on the PC and sign in. It runs as a service and
+   starts with Windows.
+3. Install the Tailscale app on the phone and sign in to the same
+   account.
+4. Run `tailscale ip -4` on the PC and note the `100.x.y.z` address.
+5. Start the relay, then enter `100.x.y.z:8765` as the server address in
+   the app — or run `relay.exe --listen 100.x.y.z` so the panel URL and
+   the QR code point at the tailnet address directly (the relay then
+   listens only there, so LAN access stops while it runs).
+6. Check `tailscale status`: a direct connection is as fast as the LAN.
+   When it says `relay "sin"` the traffic goes through a DERP server in
+   Singapore — still fine, only a little slower.
+
+Everything the phone sends stays inside the WireGuard tunnel, so the
+`ws://` traffic is encrypted on the way even though the relay itself
+still speaks plain WebSocket. The pairing code stays on top of that: five
+wrong guesses burn the code, and one address can try ten times a minute.
+
+Alternatives, if a mesh is not an option: a Cloudflare Tunnel works for
+the browser client only (the phone's browser negotiates `wss://` by
+itself, while the Android app speaks `ws://`), and a small VPS running
+`rathole` works for both but costs a few dollars a month and adds a round
+trip.
+
 ## Notes
 
 - The GUI is the default on Windows; run `relay.exe --nogui` for the
