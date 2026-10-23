@@ -10,6 +10,11 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    ErrorResponse, Request as WsRequest, Response as WsResponse,
+};
+use tokio_tungstenite::tungstenite::http::header::HeaderValue;
+use tokio_tungstenite::tungstenite::http::StatusCode;
 
 use super::hub::Hub;
 use crate::chrome;
@@ -105,7 +110,19 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
             respond(&mut stream, "200 OK", "text/javascript; charset=utf-8", APP_JS).await;
         }
         "/ws" => {
-            match tokio_tungstenite::accept_async(stream).await {
+            // Cross-site WebSocket hijacking: a browser always sends
+            // an Origin header, and it must be the relay's own host.
+            // A native client sends none and is allowed through.
+            let cb = |req: &WsRequest, resp: WsResponse| -> Result<WsResponse, ErrorResponse> {
+                match check_origin(req) {
+                    None => Ok(resp),
+                    Some(why) => {
+                        rlog!("ws upgrade refused: {why}");
+                        Err(forbidden(why))
+                    }
+                }
+            };
+            match tokio_tungstenite::accept_hdr_async(stream, cb).await {
                 Ok(ws) => hub.add_client(ws),
                 Err(e) => rlog!("ws upgrade: {e}"),
             }
@@ -208,6 +225,92 @@ async fn respond(stream: &mut TcpStream, status: &str, ctype: &str, body: &[u8])
     // before responding (no more RST race).
     let _ = stream.write_all(body).await;
     let _ = stream.shutdown().await;
+}
+
+/// Split "host[:port]" into the host and the optional port.
+///
+/// IPv6 literals ("[::1]" or "[::1]:8765") are kept whole: the
+/// brackets belong to the host, only the digits after them are a
+/// port.
+fn split_host_port(s: &str) -> (&str, Option<&str>) {
+    if let Some(close) = s.find(']') {
+        let host = &s[..=close];
+        let port = s[close + 1..].strip_prefix(':').filter(|p| !p.is_empty());
+        return (host, port);
+    }
+    match s.rfind(':') {
+        Some(i) => {
+            let port = &s[i + 1..];
+            if port.is_empty() {
+                (&s[..i], None)
+            } else {
+                (&s[..i], Some(port))
+            }
+        }
+        None => (s, None),
+    }
+}
+
+/// Reject a cross-site WebSocket handshake.
+///
+/// A browser ALWAYS sends an Origin header on a WebSocket upgrade, and
+/// it is the only thing that stops another site from opening a socket
+/// to the relay on the user's behalf (cross-site WebSocket hijacking:
+/// the page gets the live view of the user's browser).
+///
+/// The rule: when an Origin header is present, its host must be the
+/// same host the request was sent to — the relay serving its own page.
+/// A native client (the Android app) sends no Origin at all, and a
+/// native client cannot be hijacked this way, so a missing Origin is
+/// allowed.
+///
+/// Returns the reason for the refusal, or None when the handshake may
+/// proceed.
+fn check_origin(req: &WsRequest) -> Option<&'static str> {
+    let origin = match req.headers().get("origin") {
+        // No Origin header: a native client. Allowed.
+        None => return None,
+        Some(v) => match v.to_str() {
+            Ok(s) => s,
+            Err(_) => return Some("origin header is not valid UTF-8"),
+        },
+    };
+    // Origin is "scheme://host[:port]" — drop the scheme and any path.
+    let authority = match origin.split_once("://") {
+        Some((_scheme, rest)) => rest,
+        None => origin,
+    };
+    let authority = authority.split('/').next().unwrap_or("");
+    let (origin_host, origin_port) = split_host_port(authority);
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let (host, host_port) = split_host_port(host);
+    if !origin_host.eq_ignore_ascii_case(host) {
+        return Some("origin host does not match the host header");
+    }
+    // Same host, but a different port is a different origin: refuse
+    // that too (both sides must name a port for the ports to count).
+    match (origin_port, host_port) {
+        (Some(a), Some(b)) if a != b => {
+            Some("origin port does not match the host header")
+        }
+        _ => None,
+    }
+}
+
+/// The refusal answer for a rejected WebSocket handshake.
+fn forbidden(why: &str) -> ErrorResponse {
+    let body = why.to_string();
+    let mut resp = ErrorResponse::new(Some(body.clone()));
+    *resp.status_mut() = StatusCode::FORBIDDEN;
+    // tungstenite writes the headers and then the body itself, so the
+    // length has to be stated here.
+    resp.headers_mut()
+        .insert("content-length", HeaderValue::from(body.len()));
+    resp
 }
 
 fn query_param(query: &str, key: &str) -> Option<String> {

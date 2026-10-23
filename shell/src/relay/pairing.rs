@@ -350,21 +350,24 @@ impl PairingManager {
             }
             if !matched {
                 // Wrong guess: it counts against the current code.
-                inner.wrong_attempts += 1;
+                inner.wrong_attempts = inner.wrong_attempts.saturating_add(1);
                 let attempts = inner.wrong_attempts;
                 if attempts >= MAX_WRONG_ATTEMPTS {
                     if self.fixed_code.is_some() {
-                        // The --token test override is pinned, so it
-                        // cannot be invalidated - only the counter moves.
-                        rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS}) [fixed code]");
+                        // The --token test override is pinned: the code
+                        // cannot be invalidated, so the counter stays
+                        // at the cap and the log keeps saying so. The
+                        // per-address throttle still applies.
+                        inner.wrong_attempts = MAX_WRONG_ATTEMPTS;
+                        rlog!("pairing refused: wrong code (cap reached) [fixed code]");
                     } else {
                         // Too many hits on this code: invalidate it and
                         // put a fresh one on the panel. The attacker
                         // gets MAX_WRONG_ATTEMPTS tries per code, not
                         // endless ones.
                         rlog!("pairing code burned after {attempts} wrong attempts");
+                        self.burn_codes(&mut inner);
                     }
-                    self.burn_codes(&mut inner);
                 } else {
                     rlog!("pairing refused: wrong code ({attempts}/{MAX_WRONG_ATTEMPTS})");
                 }

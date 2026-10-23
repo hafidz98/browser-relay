@@ -20,6 +20,14 @@ use super::pairing::PairingManager;
 use crate::chrome;
 use crate::rlog;
 
+/// Maximum number of clients connected at the same time.
+///
+/// This is a personal tool: a handful of phones (the user's own, plus
+/// maybe a tablet) is plenty. The cap stops a script from opening
+/// thousands of sockets and holding them - each one costs a task, a
+/// channel and a slot in the client list.
+pub const MAX_CLIENTS: usize = 8;
+
 enum OutMsg {
     Text(String),
     /// Flush everything queued so far, then close (bad-token path:
@@ -226,22 +234,44 @@ impl Hub {
         let now = unix_now();
         let id = {
             let mut st = self.state.lock().unwrap();
-            st.seq += 1;
-            let id = st.seq;
-            st.clients.insert(
-                id,
-                ClientState {
-                    send: tx,
-                    queued: queued.clone(),
-                    authed: false,
-                    seq: id,
-                    peer,
-                    connected_at: now,
-                    fingerprint: String::new(),
-                    pairing_active: false,
-                },
-            );
-            id
+            // Cap: refuse the new client instead of letting the list
+            // grow without bound. The check happens under the same lock
+            // as the insert, so two clients racing cannot both slip in.
+            if st.clients.len() >= MAX_CLIENTS {
+                None
+            } else {
+                st.seq += 1;
+                let id = st.seq;
+                st.clients.insert(
+                    id,
+                    ClientState {
+                        send: tx,
+                        queued: queued.clone(),
+                        authed: false,
+                        seq: id,
+                        peer,
+                        connected_at: now,
+                        fingerprint: String::new(),
+                        pairing_active: false,
+                    },
+                );
+                Some(id)
+            }
+        };
+        let id = match id {
+            Some(id) => id,
+            None => {
+                // Over the cap: say so and hang up. The client gets a
+                // clear reason instead of a silent drop.
+                rlog!("client refused: too many clients (max {MAX_CLIENTS})");
+                tokio::spawn(async move {
+                    let mut ws = ws;
+                    let msg = json!({"type": "error", "message": "too many clients"}).to_string();
+                    let _ = ws.send(Message::Text(msg.into())).await;
+                    let _ = ws.close(None).await;
+                });
+                return;
+            }
         };
         let (mut sink, mut source) = ws.split();
 
