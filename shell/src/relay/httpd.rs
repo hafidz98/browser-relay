@@ -138,7 +138,10 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
                 .local_addr()
                 .map(|a| format!("http://{}", a))
                 .unwrap_or_default();
-            let apk_available = chrome::config_dir().join("browser-relay.apk").exists();
+            // Any browser-relay*.apk counts: the file carries its version
+            // (browser-relay-2.8.apk), so a fixed name would hide the
+            // download button as soon as the version changed.
+            let apk_available = newest_apk().await.is_some();
             let html = pair_page(code.as_deref(), &base, apk_available);
             respond(&mut stream, "200 OK", "text/html; charset=utf-8", html.as_bytes()).await;
         }
