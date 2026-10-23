@@ -379,7 +379,7 @@ fn pair_page(code: Option<&str>, base: &str, apk_available: bool) -> String {
   <a class="btn ghost" href="{web_url}">Use the web version</a>"#
         .replace("{intent_url}", &intent_url)
         .replace("{direct_url}", &direct_url)
-        .replace("{web_url}", &web_url);
+        .replace("{web_url}", &web);
     let apk_btn = if apk_available {
         r#"<a class="btn ghost" href="/app.apk">Download the Android app</a>"#
     } else {
