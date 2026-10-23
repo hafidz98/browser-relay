@@ -8,6 +8,7 @@ import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -211,28 +212,34 @@ public class RelayClient {
         final WsClient client = new WsClient();
         ws = client;
         client.connect(wsUrl, new WsClient.Listener() {
+            /**
+             * The greeting (auth) frame. WsClient calls this on the
+             * reader thread, synchronously, right after the 101 and
+             * before the first read: the frame is on the wire before
+             * the relay's auth deadline and cannot be lost to a main
+             * looper that is busy or to a socket that was replaced in
+             * the meantime. A failed write throws, so the connection
+             * fails with a reason on screen instead of a silent wait.
+             */
+            @Override
+            public void onReady(WsClient socket) throws java.io.IOException {
+                if (g != gen) {
+                    // A newer socket took over and already closed this
+                    // one (the read loop sees `closed` and exits).
+                    Log.i(TAG, "old socket, no auth sent");
+                    return;
+                }
+                backoffMs = 2000;
+                lastRxAt = System.currentTimeMillis();
+                sendAuth(socket);
+            }
+
             @Override
             public void onOpen() {
                 if (g != gen) return; // a newer socket took over
-                backoffMs = 2000;
-                lastRxAt = System.currentTimeMillis();
-                try {
-                    JSONObject auth = new JSONObject()
-                            .put("type", "auth")
-                            .put("fingerprint", fingerprint)
-                            .put("name", deviceName);
-                    // The pairing code is single use: it goes out with the
-                    // FIRST auth only. Every later connect uses the
-                    // fingerprint alone, so a spent code is never sent
-                    // twice (the server would answer "bad token").
-                    if (!token.isEmpty() && !token.equals(usedToken)) {
-                        auth.put("token", token);
-                        usedToken = token;
-                    }
-                    client.send(auth.toString());
-                } catch (Exception e) {
-                    Log.w(TAG, "auth send: " + e);
-                }
+                // The auth frame is already on the wire (onReady); this
+                // callback is only for the UI and for the bookkeeping.
+                Log.i(TAG, "connected to " + wsUrl + ", auth written");
             }
 
             @Override
@@ -269,6 +276,45 @@ public class RelayClient {
                 listener.onConnError(msg, kind);
             }
         });
+    }
+
+    /**
+     * Build and write the auth frame — the one place the credential
+     * rules live, called from the websocket reader thread before its
+     * read loop starts.
+     *
+     * <p>A message from the relay's protocol, exactly like the web
+     * client's:
+     * <pre>
+     *   {"type":"auth","fingerprint":"...","name":"...","token":"123456"}
+     * </pre>
+     * The pairing code is single use, so it goes out with the FIRST
+     * auth only and is marked spent only after it actually reached the
+     * wire: a message that failed to be written must not burn the code.
+     * Every later connect (and every retry) authenticates with the
+     * fingerprint alone.
+     *
+     * @throws IOException when the frame did not reach the wire; the
+     *                     caller turns that into a visible error, never
+     *                     into a silent wait for the relay's deadline
+     */
+    private void sendAuth(WsClient socket) throws IOException {
+        boolean withCode = !token.isEmpty() && !token.equals(usedToken);
+        final JSONObject auth = new JSONObject();
+        try {
+            auth.put("type", "auth")
+                    .put("fingerprint", fingerprint == null ? "" : fingerprint)
+                    .put("name", deviceName == null ? "" : deviceName);
+            if (withCode) auth.put("token", token);
+        } catch (Exception e) {
+            throw new IOException("the auth message could not be built ("
+                    + e.getMessage() + ")");
+        }
+        String json = auth.toString();
+        socket.sendOrThrow(json);
+        if (withCode) usedToken = token; // spent only once it is on the wire
+        Log.i(TAG, "auth written (" + json.length() + " bytes, "
+                + (withCode ? "with the pairing code" : "fingerprint only") + ")");
     }
 
     public void disconnect() {

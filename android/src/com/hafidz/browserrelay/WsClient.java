@@ -32,6 +32,24 @@ public class WsClient {
     private static final long MAX_FRAME = 16 * 1024 * 1024;
 
     public interface Listener {
+        /**
+         * Called on the READER thread, synchronously, right after the
+         * handshake has been verified and before a single byte is read.
+         *
+         * <p>This is where the greeting frame (the auth) must be
+         * written: it is then on the wire before the relay's auth
+         * deadline, and it cannot lose a race with the main looper (the
+         * socket can be replaced, or closed, while a posted callback is
+         * still waiting in the queue). Writing with
+         * {@link #sendOrThrow} makes a failed write throw, so the
+         * connection fails with a reason instead of waiting silently.
+         *
+         * @param ws the socket that was just opened
+         * @throws IOException when the greeting could not be written;
+         *                     the connection is then dropped with that
+         *                     message
+         */
+        void onReady(WsClient ws) throws IOException;
         void onOpen();
         void onMessage(String text);
         void onClose();
@@ -61,6 +79,8 @@ public class WsClient {
         public static final int NOT_PAIRED = 7;
         /** The connection was lost after it had been established. */
         public static final int LOST = 8;
+        /** The handshake worked, but our first frame could not be written. */
+        public static final int SEND_FAILED = 9;
     }
 
     /** A failure that already carries its own user-facing sentence. */
@@ -213,6 +233,28 @@ public class WsClient {
             } catch (Exception e) {
                 Log.w(TAG, "setSoTimeout: " + e);
             }
+
+            // ===== the greeting frame, written by THIS thread =====
+            // The auth used to be written from onOpen, which is posted to
+            // the main looper: the frame then depended on the main thread
+            // running that runnable, and a socket that had been replaced
+            // or closed in the meantime swallowed it (send() returns
+            // silently once closed). The relay saw a handshake and then
+            // silence, closed the socket at its auth deadline, and the
+            // phone could only say "the connection to the PC was closed".
+            // Writing it here - on the thread that just read the 101 and
+            // before the first read - removes that whole class of race,
+            // and a failed write is now an error the user can see.
+            try {
+                listener.onReady(this);
+            } catch (IOException e) {
+                String why = e.getMessage() == null ? e.toString() : e.getMessage();
+                Log.w(TAG, "greeting not written: " + why);
+                throw new ConnectFail(Failure.SEND_FAILED,
+                        "the pairing request could not be sent (" + why + ")");
+            }
+            // The UI callback stays posted: nothing on screen may be
+            // touched from this thread.
             post(listener::onOpen);
             readLoop(in, listener);
         } catch (ConnectFail e) {
@@ -385,20 +427,45 @@ public class WsClient {
         }
     }
 
-    /** Send one masked text frame. */
+    /** Send one masked text frame; a failure is only logged. */
     public void send(String text) {
-        OutputStream o = out;
-        if (closed || o == null) return;
+        sendText(text);
+    }
+
+    /**
+     * Send one masked text frame.
+     *
+     * @return true when the frame was written, false when the socket is
+     *         gone or the write failed. The caller that needs to know
+     *         (the greeting) uses {@link #sendOrThrow} instead: a lost
+     *         frame must never be silent.
+     */
+    public boolean sendText(String text) {
+        if (text == null) return false;
         try {
             sendFrame(0x1, text.getBytes("UTF-8"));
+            return true;
         } catch (IOException e) {
             Log.w(TAG, "send failed: " + e);
+            return false;
         }
+    }
+
+    /**
+     * Send one masked text frame and fail loudly when it did not reach
+     * the wire. Used for the auth/greeting frame: the relay drops a
+     * socket that stays silent, so a swallowed write leaves the user
+     * staring at a dead screen with no reason on it.
+     */
+    public void sendOrThrow(String text) throws IOException {
+        if (text == null) throw new IOException("nothing to send");
+        sendFrame(0x1, text.getBytes("UTF-8"));
     }
 
     private synchronized void sendFrame(int opcode, byte[] payload) throws IOException {
         OutputStream o = out;
-        if (closed || o == null) return;
+        if (closed) throw new IOException("the connection is closed");
+        if (o == null) throw new IOException("the connection is not open yet");
         int len = payload.length;
         ByteArrayOutputStream h = new ByteArrayOutputStream();
         h.write(0x80 | opcode);
