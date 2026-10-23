@@ -53,6 +53,16 @@
                     android:textColor="@color/relay_muted"
                     android:textSize="12sp" />
             </LinearLayout>
+
+            <!-- The installed version, read from the APK itself: this is
+                 how the user checks that the new build is the one running. -->
+            <TextView
+                android:id="@+id/berandaVersion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="@color/relay_faint"
+                android:textSize="11sp" />
         </LinearLayout>
 
 

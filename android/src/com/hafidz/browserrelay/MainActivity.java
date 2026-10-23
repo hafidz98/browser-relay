@@ -168,6 +168,7 @@ public class MainActivity extends Activity
     private TextView berandaPcName;
     private TextView berandaAddress;
     private TextView berandaRole;
+    private TextView berandaVersion;
     private View berandaDot;
     private View berandaTakeover;
     /** The remote view is in front of the beranda (the user opened it). */
@@ -1224,6 +1225,15 @@ public class MainActivity extends Activity
         berandaRole = findViewById(R.id.berandaRole);
         berandaTakeover = findViewById(R.id.berandaTakeover);
         shortcutGrid = findViewById(R.id.shortcutGrid);
+        // The version of the APK that is actually installed, straight
+        // from PackageManager: the user checks a new build with it, so it
+        // must come from the same place the installer reads.
+        berandaVersion = findViewById(R.id.berandaVersion);
+        if (berandaVersion != null) {
+            String version = appVersion();
+            berandaVersion.setText(version);
+            berandaVersion.setContentDescription("App version " + version);
+        }
 
         // Every tool tile carries its action in the tag, so the layout
         // and the code cannot drift apart.
@@ -1488,6 +1498,26 @@ public class MainActivity extends Activity
             // Take over only makes sense while we only watch.
             berandaTakeover.setVisibility(
                     connected && !relay.isDriver() ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /**
+     * The version of the installed APK, exactly as the build stamped it
+     * ("2.9", or the versionCode if the name is empty). This is the
+     * ground truth of "which APK is running" - not a constant in the
+     * source, which could disagree with the file on the phone.
+     */
+    private String appVersion() {
+        try {
+            android.content.pm.PackageInfo info = getPackageManager()
+                    .getPackageInfo(getPackageName(), 0);
+            if (info.versionName != null && !info.versionName.isEmpty()) {
+                return info.versionName;
+            }
+            return String.valueOf(info.versionCode);
+        } catch (Exception e) {
+            Log.w(TAG, "app version: " + e);
+            return "";
         }
     }
 
