@@ -123,7 +123,16 @@ async fn handle(mut stream: TcpStream, hub: Arc<Hub>) {
                 }
             };
             match tokio_tungstenite::accept_hdr_async(stream, cb).await {
-                Ok(ws) => hub.add_client(ws),
+                Ok(ws) => {
+                    // Log every accepted socket with its address: without
+                    // this, a client that connects and then says nothing
+                    // leaves no trace at all, and "it will not connect"
+                    // cannot be told apart from "it never arrived".
+                    if let Ok(peer) = ws.get_ref().peer_addr() {
+                        rlog!("ws upgrade ok from {peer}");
+                    }
+                    hub.add_client(ws)
+                }
                 Err(e) => rlog!("ws upgrade: {e}"),
             }
         }
