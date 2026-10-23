@@ -168,9 +168,7 @@ public class MainActivity extends Activity
     private TextView berandaPcName;
     private TextView berandaAddress;
     private TextView berandaRole;
-    private TextView berandaError;
     private View berandaDot;
-    private View berandaReconnect;
     private View berandaTakeover;
     /** The remote view is in front of the beranda (the user opened it). */
     private boolean remoteOpen = false;
@@ -213,6 +211,15 @@ public class MainActivity extends Activity
 
     /** What a tool tile of the beranda does. */
     private void onBerandaTool(String action) {
+        // Nothing on the beranda can drive the PC without a session:
+        // say so, and put the connect card in front, instead of doing
+        // nothing at all.
+        if (!connected && !"remote".equals(action)) {
+            connectCardShown = true;
+            updateState();
+            Toast.makeText(this, "Connect to the PC first", Toast.LENGTH_SHORT).show();
+            return;
+        }
         switch (action) {
             case "remote":
                 openRemote();
@@ -277,7 +284,7 @@ public class MainActivity extends Activity
         Toast.makeText(this, "Link copied", Toast.LENGTH_SHORT).show();
     }
 
-    /** End the session: the app goes back to the connect card. */
+    /** End the session: the beranda stays, with the connect card in it. */
     private void endSession() {
         relay.disconnect();
         connected = false;
@@ -285,7 +292,9 @@ public class MainActivity extends Activity
         lastConnError = "";
         updateConnectError();
         closeSheet();
-        // The session is over: the connect card is the screen again.
+        // One home screen: the user lands on the beranda, not on the
+        // remote view of a session that no longer exists.
+        remoteOpen = false;
         connectCardShown = true;
         updateState();
     }
@@ -413,10 +422,6 @@ public class MainActivity extends Activity
         } else if (remoteOpen) {
             // The back button brings the beranda back.
             closeRemote();
-        } else if (connectCardShown && !pairingRequired) {
-            // The card was opened on purpose: the beranda is behind it.
-            connectCardShown = false;
-            updateState();
         } else {
             super.onBackPressed();
         }
@@ -1217,9 +1222,7 @@ public class MainActivity extends Activity
         berandaPcName = findViewById(R.id.berandaPcName);
         berandaAddress = findViewById(R.id.berandaAddress);
         berandaRole = findViewById(R.id.berandaRole);
-        berandaError = findViewById(R.id.berandaError);
         berandaTakeover = findViewById(R.id.berandaTakeover);
-        berandaReconnect = findViewById(R.id.berandaReconnect);
         shortcutGrid = findViewById(R.id.shortcutGrid);
 
         // Every tool tile carries its action in the tag, so the layout
@@ -1233,17 +1236,13 @@ public class MainActivity extends Activity
             tile.setOnClickListener(v -> onBerandaTool(action));
         }
 
-        // Take over (when we only watch) and Reconnect (when the link
-        // died) sit at the bottom of the connection card.
+        // Take over (when we only watch) sits at the bottom of the
+        // connection card. The way to reconnect is the Connect button of
+        // the card that is in the same beranda, so there is only one.
         berandaTakeover.setOnClickListener(v -> {
             relay.sendTakeover();
             Toast.makeText(this, "Taking over the remote view",
                     Toast.LENGTH_SHORT).show();
-        });
-        berandaReconnect.setOnClickListener(v -> {
-            lastConnError = "";
-            updateConnectError();
-            userReconnect();
         });
         // The address is tappable: the card opens to fix it.
         if (berandaAddress != null) {
@@ -1303,23 +1302,28 @@ public class MainActivity extends Activity
     }
 
     /**
-     * The one state on screen: the connect card (the device is not
-     * paired yet), the beranda (the default screen) or the remote view
-     * (the user opened it from the beranda).
+     * What is on screen. There is one home screen and one remote view,
+     * never a third look:
      *
-     * <p>Exactly one of them is in front. The status information lives
-     * in one place - the status bar of the remote view, and the status
-     * area of the beranda.
+     * <ul>
+     *   <li>the beranda - the app's screen, always, in every state</li>
+     *   <li>the connect card - a card in the beranda's body, shown while
+     *       there is no session (or when the user asked to fix the
+     *       address); it is never a screen of its own</li>
+     *   <li>the remote view - opened from the beranda's Remote tile, and
+     *       Back brings the beranda back</li>
+     *   <li>one lost-connection banner - inside the remote view; the
+     *       beranda shows the same reason on the card's own line</li>
+     * </ul>
      */
     private void updateState() {
         runOnUiThread(() -> {
-            boolean wasConnectCard = connectCard != null
-                    && connectCard.getVisibility() == View.VISIBLE;
-            // The connect card is the screen while the device is not
-            // paired, or while the user asked for it.
-            boolean showConnect = connectCardShown;
-            // The remote view is alive as soon as there is a session.
-            boolean showRemote = connected || lost;
+            // The connect card is part of the beranda: a device that is
+            // not paired sees the home screen with the card in it, not a
+            // bare full-screen form.
+            boolean showConnect = connectCardShown || !connected;
+            // The remote view is only on screen while the user is in it.
+            boolean showRemote = (connected || lost) && remoteOpen;
 
             if (connectCard != null) {
                 connectCard.setVisibility(showConnect ? View.VISIBLE : View.GONE);
@@ -1328,23 +1332,20 @@ public class MainActivity extends Activity
                 statusBar.setVisibility(showRemote ? View.VISIBLE : View.GONE);
             }
             if (lostBanner != null) {
-                lostBanner.setVisibility(lost ? View.VISIBLE : View.GONE);
+                lostBanner.setVisibility(showRemote && lost ? View.VISIBLE : View.GONE);
             }
-            // The remote view only shows once there is a session.
             if (frameView != null) {
                 frameView.setVisibility(showRemote ? View.VISIBLE : View.INVISIBLE);
             }
-            // The beranda is the default screen: it covers the remote
-            // view until the user opens the remote view from it.
+            // The beranda is the home screen: it is only out of the way
+            // while the remote view stands in front of it.
             if (berandaView != null) {
-                boolean berandaOn = !showConnect && !remoteOpen;
-                berandaView.setVisibility(berandaOn ? View.VISIBLE : View.GONE);
+                berandaView.setVisibility(remoteOpen ? View.GONE : View.VISIBLE);
             }
             // The edge handle belongs to the remote view (the web
             // client hides it on the home screen too).
             if (handle != null) {
-                boolean handleOn = remoteOpen && showRemote;
-                handle.setVisibility(handleOn ? View.VISIBLE : View.GONE);
+                handle.setVisibility(showRemote ? View.VISIBLE : View.GONE);
             }
             updateBeranda();
 
@@ -1388,14 +1389,13 @@ public class MainActivity extends Activity
             if (shortcutGrid != null) {
                 shortcutGrid.setAlpha(connected ? 1f : 0.35f);
             }
-            if (wasConnectCard && showConnect) {
-                // The card just came back: the keyboard may be in the way.
-                serverInput.requestFocus();
-            }
+            // The card's own line always says what is wrong (also when
+            // the session died without the socket naming a reason).
+            updateConnectError();
         });
     }
 
-    /** The not-connected state: the connect card is the screen. */
+    /** The not-connected state: the beranda, with the connect card in it. */
     private void showConnectState() {
         connected = false;
         lost = false;
@@ -1408,10 +1408,11 @@ public class MainActivity extends Activity
      */
     private void openRemote() {
         if (!connected) {
-            // Nothing to drive yet: the card says why, and the user
-            // can fix the address there.
+            // Nothing to drive yet: the beranda stays, and its connect
+            // card is brought into view instead of another screen.
             connectCardShown = true;
             updateState();
+            Toast.makeText(this, "Connect to the PC first", Toast.LENGTH_SHORT).show();
             return;
         }
         remoteOpen = true;
@@ -1449,9 +1450,9 @@ public class MainActivity extends Activity
             } else if (lost) {
                 t = "Connection lost";
             } else if (pairingRequired) {
-                t = "Not paired";
+                t = "Not paired yet";
             } else {
-                t = "Connecting…";
+                t = "Not connected";
             }
             berandaState.setText(t);
         }
@@ -1479,30 +1480,31 @@ public class MainActivity extends Activity
         if (berandaRole != null) {
             berandaRole.setText(roleLabel.isEmpty() ? "—" : roleLabel);
         }
-        if (berandaError != null) {
-            boolean show = !connected && !lastConnError.isEmpty();
-            berandaError.setVisibility(show ? View.VISIBLE : View.GONE);
-            berandaError.setText(lastConnError);
+        if (berandaLatency != null && !connected) {
+            // No session, no round trip: a stale number would be a lie.
+            berandaLatency.setText("— ms");
         }
         if (berandaTakeover != null) {
             // Take over only makes sense while we only watch.
             berandaTakeover.setVisibility(
                     connected && !relay.isDriver() ? View.VISIBLE : View.GONE);
         }
-        if (berandaReconnect != null) {
-            berandaReconnect.setVisibility(
-                    !connected ? View.VISIBLE : View.GONE);
-        }
     }
 
     /** The line under the Connect button: what is wrong, or what to do. */
     private void updateConnectError() {
         if (connectError == null) return;
-        if (lastConnError == null || lastConnError.isEmpty()) {
+        String line = lastConnError == null ? "" : lastConnError.trim();
+        if (line.isEmpty() && !connected && lost) {
+            // The session died without the socket saying why: the card
+            // still has to say what happened instead of staying blank.
+            line = "The connection to the PC was closed.";
+        }
+        if (line.isEmpty()) {
             connectError.setVisibility(View.GONE);
             connectError.setText("");
         } else {
-            connectError.setText(lastConnError);
+            connectError.setText(line);
             connectError.setVisibility(View.VISIBLE);
         }
     }

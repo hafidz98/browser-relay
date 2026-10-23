@@ -26,20 +26,35 @@
         android:paddingBottom="28dp">
 
         <!-- ================= the header ================= -->
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Home"
-            android:textColor="@color/relay_text"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Tools and the PC connection"
-            android:textColor="@color/relay_muted"
-            android:textSize="12sp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Home"
+                    android:textColor="@color/relay_text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Tools and the PC connection"
+                    android:textColor="@color/relay_muted"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
+
 
         <!-- ================= the state of the connection ================= -->
         <LinearLayout
@@ -95,6 +110,119 @@
                 android:text="— ms"
                 android:textColor="@color/relay_faint"
                 android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- ================= the connect card =================
+             The way in when there is no session yet: the address, the 6
+             digit code, one Connect button and the line under it that
+             says what is wrong. It is a card in the beranda's body, not
+             a screen of its own: a phone that is not paired still gets
+             the home screen, with this card in it. -->
+        <LinearLayout
+            android:id="@+id/connectCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/card_bg"
+            android:orientation="vertical"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Connect to your PC"
+                android:textColor="@color/relay_text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/connectHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Open the panel on the laptop for the address and the 6 digit code."
+                android:textColor="@color/relay_muted"
+                android:textSize="12sp" />
+
+            <TextView
+                style="@style/SectionLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="PC ADDRESS" />
+
+            <EditText
+                android:id="@+id/serverInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/field_bg"
+                android:hint="192.168.1.10:8765"
+                android:imeOptions="actionNext"
+                android:inputType="textUri"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:singleLine="true"
+                android:textColor="@color/relay_text"
+                android:textColorHint="@color/relay_faint"
+                android:textSize="14sp" />
+
+            <TextView
+                style="@style/SectionLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="PAIRING CODE" />
+
+            <EditText
+                android:id="@+id/codeInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/field_bg"
+                android:hint="6 digits"
+                android:imeOptions="actionDone"
+                android:inputType="number"
+                android:letterSpacing="0.3"
+                android:maxLength="6"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:singleLine="true"
+                android:textColor="@color/relay_text"
+                android:textColorHint="@color/relay_faint"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/connectBtn"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="14dp"
+                android:backgroundTint="@color/relay_accent"
+                android:text="Connect"
+                android:textAllCaps="false"
+                android:textColor="@color/relay_on_accent"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <!-- The line under the button: what is wrong, or what to do.
+                 It stays until the next attempt, so it can be read. -->
+            <TextView
+                android:id="@+id/connectError"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:minHeight="20dp"
+                android:textColor="@color/relay_red"
+                android:textSize="12sp"
+                android:visibility="gone" />
         </LinearLayout>
 
         <!-- ================= the tools ================= -->
@@ -612,30 +740,12 @@
             </LinearLayout>
 
             <TextView
-                android:id="@+id/berandaError"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textColor="@color/relay_red"
-                android:textSize="12sp"
-                android:visibility="gone" />
-
-            <TextView
                 android:id="@+id/berandaTakeover"
                 style="@style/PillButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:text="Take over"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/berandaReconnect"
-                style="@style/PillButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Reconnect"
                 android:visibility="gone" />
         </LinearLayout>
 

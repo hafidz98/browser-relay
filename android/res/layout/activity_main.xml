@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The remote screen is the main surface and fills the window.
-    Everything else is one of three states, and only one is on screen:
-      - not connected : the connect card (address, code, Connect, reason)
-      - connected     : the remote view + a slim status bar
-      - lost          : the remote view + the status bar + a Reconnect banner
+    One home screen, one remote view, one lost-connection banner.
+
+      - the beranda (the home screen, included at the bottom of this
+        file) is what the app shows, always: with the connect card in
+        its body while there is no session, and with the live state and
+        the tool tiles once there is one
+      - the remote view (the frame + the slim status bar + the banners)
+        is what the user opens from the beranda, and Back returns
+      - lost: the remote view keeps the Reconnect banner; on the beranda
+        the same reason is on the connect card's own line
     The web client does the same: on a phone #screen sits under the
     slim #status bar.
 -->
@@ -213,126 +218,11 @@
     </LinearLayout>
 
     <!-- ===================== THE BERANDA (the home screen) =====================
-         A layer above the remote screen: it is the default screen of
-         the phone, and the remote view is what the user opens from it.
-         The connect card sits above it (the device is not paired yet). -->
+         A layer above the remote screen: it is the home screen of the
+         phone, in every state. The remote view is what the user opens
+         from it, and the connect card (address, code, Connect) is a card
+         in its body - never a screen of its own. -->
     <include layout="@layout/beranda" />
-
-    <!-- ===================== NOT CONNECTED: the connect card =====================
-         The one card the user sees before there is a connection: the PC
-         address, the pairing code, one Connect button, and the line under
-         it that says what is wrong. -->
-    <ScrollView
-        android:id="@+id/connectCard"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="@color/relay_bg"
-        android:fillViewport="true"
-        android:visibility="gone">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="24dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Connect to your PC"
-                android:textColor="@color/relay_text"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/connectHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Open the panel on the laptop for the address and the 6 digit code."
-                android:textColor="@color/relay_muted"
-                android:textSize="14sp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="28dp"
-                android:text="PC ADDRESS"
-                android:textColor="@color/relay_faint"
-                android:textSize="11sp"
-                android:letterSpacing="0.1" />
-
-            <EditText
-                android:id="@+id/serverInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:hint="192.168.1.10:8765"
-                android:textColor="@color/relay_text"
-                android:textColorHint="@color/relay_faint"
-                android:background="@drawable/field_bg"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
-                android:inputType="textUri"
-                android:imeOptions="actionNext"
-                android:singleLine="true" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
-                android:text="PAIRING CODE"
-                android:textColor="@color/relay_faint"
-                android:textSize="11sp"
-                android:letterSpacing="0.1" />
-
-            <EditText
-                android:id="@+id/codeInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:hint="6 digits"
-                android:textColor="@color/relay_text"
-                android:textColorHint="@color/relay_faint"
-                android:background="@drawable/field_bg"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:paddingTop="12dp"
-                android:paddingBottom="12dp"
-                android:inputType="number"
-                android:maxLength="6"
-                android:letterSpacing="0.3"
-                android:imeOptions="actionDone"
-                android:singleLine="true" />
-
-            <Button
-                android:id="@+id/connectBtn"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="20dp"
-                android:text="Connect"
-                android:textAllCaps="false"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:textColor="@color/relay_on_accent"
-                android:backgroundTint="@color/relay_accent" />
-
-            <!-- The line under the button: what is wrong, or what to do.
-                 It stays until the next attempt, so it can be read. -->
-            <TextView
-                android:id="@+id/connectError"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:minHeight="20dp"
-                android:textColor="@color/relay_red"
-                android:textSize="13sp"
-                android:visibility="gone" />
-        </LinearLayout>
-    </ScrollView>
 
     <!-- sheet backdrop -->
     <View
